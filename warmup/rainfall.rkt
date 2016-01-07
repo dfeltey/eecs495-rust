@@ -3,10 +3,13 @@
 ;; -> void
 (define (main)
   (define readings (get-readings (current-input-port)))
-  (define mn (mean readings))
-  (displayln (~a "Mean rainfall: " mn  " cm" ))
-  (displayln (~a "Below count : " (count mn readings #t)))
-  (displayln (~a "Above count : " (count mn readings #f))))
+  (cond
+    [(null? readings) (displayln "No measurements given.")]
+    [else
+     (define mn (mean readings))
+     (displayln (~a "Mean rainfall: " mn  " cm" ))
+     (displayln (~a "Below count : " (count mn readings #t)))
+     (displayln (~a "Above count : " (count mn readings #f)))]))
 
 ;; mean : (listof nonnegative?) -> nonnegative?
 (define (mean readings)
@@ -69,4 +72,11 @@
                     [current-output-port sp])
        (main))
      (get-output-string sp))
-   "Mean rainfall: 4 cm\nBelow count : 3\nAbove count : 0\n"))
+   "Mean rainfall: 4 cm\nBelow count : 3\nAbove count : 0\n")
+  (check-equal?
+   (let ([sp (open-output-string)])
+     (parameterize ([current-input-port (open-input-string "")]
+                    [current-output-port sp])
+       (main))
+     (get-output-string sp))
+   "No measurements given.\n"))
