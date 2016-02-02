@@ -4,6 +4,7 @@ use std::env;
 use std::fs::File;
 
 fn main() {
+    Graph::new("foo.txt".to_owned());
 }
 
 #[derive(PartialEq,Debug)]
@@ -52,7 +53,14 @@ impl Graph {
         return Graph{edges: graph};
     }
 
-    fn search(&self, start: String, end: String) {
+    fn neighbors(&self,node: String) -> &HashSet<String> {
+        match self.edges.get(&node) {
+            Some(hs) => hs,
+            None => panic!("No such node {}",node),
+        }
+    }
+
+    fn search(&self, start: String, end: String) -> HashMap< {
         let ref edges = self.edges;
         let mut current: &String = &start;
         let mut seen: HashSet<&String> = HashSet::new();
@@ -102,6 +110,16 @@ mod graph_tests {
         let actual = Graph::build_graph(StringReader::new("a b d\nb a d\nc\nd c\n"));
         assert_eq!(expected,actual);
     }
+
+    #[test]
+    fn test_search() {
+        let graph = Graph::new(StringReader::new("a b d\nb a d\nc\nd c\n"));
+        let path = graph.search("a".to_owned(),"b".to_owned());
+        
+        
+    }
+
+}
 
 
     fn build_edges(edges: Vec<&str>) -> HashSet<String> {
