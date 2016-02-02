@@ -42,6 +42,9 @@ impl Graph {
                 graph.entry(edge.to_owned()).or_insert(HashSet::new()).insert(vertex.to_owned());
             }
         }
+        if !neighbors_not_seen.is_empty() {
+            panic!("a neighbor of some vertex does not appear on its own line");
+        }
         return Graph{edges: graph};
     }
 }
