@@ -39,7 +39,9 @@ impl Graph {
             }
             neighbors_not_seen.remove(vertex);
             for edge in words {
-                neighbors_not_seen.insert(edge.to_owned());
+                if !seen.contains(edge){
+                    neighbors_not_seen.insert(edge.to_owned());
+                }
                 graph.get_mut(vertex).expect("expected vertex is missing").insert(edge.to_owned());
                 graph.entry(edge.to_owned()).or_insert(HashSet::new()).insert(vertex.to_owned());
             }
@@ -48,6 +50,14 @@ impl Graph {
             panic!("a neighbor of some vertex does not appear on its own line");
         }
         return Graph{edges: graph};
+    }
+
+    fn search(&self, start: String, end: String) {
+        let ref edges = self.edges;
+        let mut current: &String = &start;
+        let mut seen: HashSet<&String> = HashSet::new();
+        let mut stack: Vec<&String> = Vec::new();
+        
     }
 }
 
@@ -80,7 +90,27 @@ mod graph_tests {
         let actual = Graph::build_graph(StringReader::new("a"));
         assert_eq!(expected,actual);
     }
-    
+
+    #[test]
+    fn example_graph() {
+        let mut edges = HashMap::new();
+        edges.insert("a".to_owned(),build_edges(vec!("b","d")));
+        edges.insert("b".to_owned(),build_edges(vec!("a","d")));
+        edges.insert("c".to_owned(),build_edges(vec!("d")));
+        edges.insert("d".to_owned(),build_edges(vec!("a","b","c")));
+        let expected = Graph{edges: edges};
+        let actual = Graph::build_graph(StringReader::new("a b d\nb a d\nc\nd c\n"));
+        assert_eq!(expected,actual);
+    }
+
+
+    fn build_edges(edges: Vec<&str>) -> HashSet<String> {
+        let mut h = HashSet::new();
+        for e in edges {
+            h.insert(e.to_owned());
+        }
+        h
+    }
 
     struct StringReader {
         contents: Vec<u8>,
