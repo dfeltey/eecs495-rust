@@ -93,7 +93,7 @@ impl Graph {
 	  None => break,
 	  Some(u) =>
             for v in self.edges.get(u).unwrap() {
-              let alt = Graph::addone(dist.get(v).unwrap());
+              let alt = (*(dist.get(v).unwrap())).map(|m| m+1);
               if Graph::lt(&alt,dist.get(v).unwrap()) {
                 dist.insert(v,alt);
                 prev.insert(v,Some(u));
@@ -119,13 +119,6 @@ impl Graph {
        }
      }
    }
-
-    fn addone(n1 : &Option<u32>) -> Option<u32> {
-      match *n1 {
-            None => None,
-            Some(n) => Some(n+1)
-      }
-    }
 
     fn lt(n1 : &Option<u32>, n2 : &Option<u32>) -> bool {
       match *n1 {
