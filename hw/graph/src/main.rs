@@ -45,11 +45,11 @@ impl Graph {
                     neighbors_not_seen.insert(edge.to_owned());
                 }
                 graph.get_mut(vertex)
-		  .expect("expected vertex is missing")
-		  .insert(edge.to_owned());
+                     .expect("expected vertex is missing")
+                     .insert(edge.to_owned());
                 graph.entry(edge.to_owned())
-		     .or_insert(HashSet::new())
-		     .insert(vertex.to_owned());
+                     .or_insert(HashSet::new())
+                     .insert(vertex.to_owned());
             }
         }
         if !neighbors_not_seen.is_empty() {
@@ -76,8 +76,8 @@ impl Graph {
       let source_ptr = maybe_source_ptr.expect("source node not in graph");
       let dest_ptr = maybe_dest_ptr.expect("source node not in graph");
       Graph::build_path(self.search_ptr(source_ptr, dest_ptr),
-		        source_ptr,
-			dest_ptr)
+                        source_ptr,
+                        dest_ptr)
     }
 
     // this function is a variation of
@@ -96,8 +96,8 @@ impl Graph {
       dist.insert(source,Some(0));
       loop {
         match Graph::min(&mut Q,&dist) {
-	  None => break,
-	  Some(u) =>
+          None => break,
+          Some(u) =>
             for v in self.edges.get(u).unwrap() {
               let alt = (*(dist.get(v).unwrap())).map(|m| m+1);
               if Graph::lt(&alt,dist.get(v).unwrap()) {
@@ -112,7 +112,7 @@ impl Graph {
 
    fn build_path<'a>(prev : HashMap<&String,Option<& 'a String>>,
                      source : & String,
-		     dest : & 'a String)
+                     dest : & 'a String)
                     -> Option<Vec<& 'a String>> {
      match prev.get(dest) {
        None => None,
@@ -147,9 +147,9 @@ impl Graph {
       for v in Q.iter() {
         let v_dist = dist.get(v).unwrap();
         if best_dist == None || best_dist.unwrap() > v_dist  {
-	   best_dist = Some(v_dist);
+           best_dist = Some(v_dist);
            best_node = Some(v);
-	}
+        }
       }
       None
     }
@@ -215,15 +215,15 @@ mod graph_tests {
     fn test_one_hop() {
         let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
         let path = graph.search("a".to_owned(),"b".to_owned());
-	let expected = Vec::new();
-	assert_eq!(path,Some(expected));
+        let expected = Vec::new();
+        assert_eq!(path,Some(expected));
     }
 
     #[test]
     fn test_no_route() {
         let graph = Graph::build_graph(StringReader::new("a\nb\n"));
         let path = graph.search("a".to_owned(),"b".to_owned());
-	assert_eq!(path,None)
+        assert_eq!(path,None)
     }
 
     fn build_edges(edges: Vec<&str>) -> HashSet<String> {
