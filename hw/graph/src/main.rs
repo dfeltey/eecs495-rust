@@ -1,6 +1,7 @@
 use std::collections::{HashMap,HashSet};
 use std::io::{BufReader,BufRead,Read,stdin};
 use std::env;
+use std::vec;
 use std::fs::File;
 
 fn main() {
@@ -60,12 +61,93 @@ impl Graph {
         }
     }
 
-    fn search(&self, start: String, end: String) -> HashMap< {
-        let ref edges = self.edges;
-        let mut current: &String = &start;
-        let mut seen: HashSet<&String> = HashSet::new();
-        let mut stack: Vec<&String> = Vec::new();
-        
+    fn search<'a>(& 'a self, source : String, dest : String) -> Option<Vec<& 'a String>>{
+      let mut maybe_source_ptr : Option<&String> = None;
+      let mut maybe_dest_ptr : Option<&String> = None;
+      for (src,dests) in self.edges.iter() {
+        if source == *src { maybe_source_ptr = Some(src) }
+        if dest == *src { maybe_dest_ptr = Some(src) }
+      }
+      let source_ptr = maybe_source_ptr.expect("source node not in graph");
+      let dest_ptr = maybe_dest_ptr.expect("source node not in graph");
+      Graph::build_path(self.search_ptr(source_ptr, dest_ptr),
+		        source_ptr,
+			dest_ptr)
+    }
+
+    // this function is a variation
+    // https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm#Pseudocode
+    // that handles disconnected graphs (I think that one doesn't, anyway)
+    fn search_ptr<'a>(& 'a self, source: & 'a String, dest : & 'a String) -> HashMap<&String,Option<&String>> {
+      let mut dist : HashMap<&String,Option<u32>> = HashMap::new();
+      let mut prev : HashMap<&String,Option<&String>> = HashMap::new();
+      let mut Q : Vec<&String> = Vec::new();
+      for (src,dests) in self.edges.iter() {
+        dist.entry(src).or_insert(None);
+        prev.entry(src).or_insert(None);
+        Q.push(src)
+      };
+      dist.insert(source,Some(0));
+      loop {
+        match Graph::min(&mut Q,&dist) {
+	  None => break,
+	  Some(u) =>
+            for v in self.edges.get(u).unwrap() {
+              let alt = Graph::addone(dist.get(v).unwrap());
+              if Graph::lt(&alt,dist.get(v).unwrap()) {
+                dist.insert(v,alt);
+                prev.insert(v,Some(u));
+              }
+            }
+         }
+       };
+       prev
+     }
+
+   fn build_path<'a>(prev : HashMap<&String,Option<& 'a String>>, source : & String, dest : & 'a String) -> Option<Vec<& 'a String>> {
+     match prev.get(dest) {
+       None => None,
+       Some(_) => {
+         let mut path = Vec::new();
+         let mut node = dest;
+         loop {
+           path.push(node);
+           if node == source {break}
+             node = prev.get(node).unwrap().unwrap();
+         };
+         Some(path)
+       }
+     }
+   }
+
+    fn addone(n1 : &Option<u32>) -> Option<u32> {
+      match *n1 {
+            None => None,
+            Some(n) => Some(n+1)
+      }
+    }
+
+    fn lt(n1 : &Option<u32>, n2 : &Option<u32>) -> bool {
+      match *n1 {
+        None => false,
+        Some(m1) => match *n2 {
+          None => false,
+          Some(m2) => m1 < m2
+        }
+      }
+    }
+
+    fn min<'a>(Q: &mut Vec<& 'a String>, dist: &HashMap<&String,Option<u32>>) -> Option<& 'a String> {
+      let mut best_node : Option<&String>  = None;
+      let mut best_dist = None;
+      for v in Q.iter() {
+        let v_dist = dist.get(v).unwrap();
+        if best_dist == None || best_dist.unwrap() > v_dist  {
+	   best_dist = Some(v_dist);
+           best_node = Some(v);
+	}
+      }
+      None
     }
 }
 
@@ -112,15 +194,33 @@ mod graph_tests {
     }
 
     #[test]
-    fn test_search() {
-        let graph = Graph::new(StringReader::new("a b d\nb a d\nc\nd c\n"));
-        let path = graph.search("a".to_owned(),"b".to_owned());
-        
-        
+    #[should_panic]
+    fn test_badsearch1() {
+        let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
+        graph.search("a".to_owned(),"c".to_owned());
     }
 
-}
+    #[test]
+    #[should_panic]
+    fn test_badsearch2() {
+        let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
+        graph.search("c".to_owned(),"a".to_owned());
+    }
 
+    #[test]
+    fn test_one_hop() {
+        let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
+        let path = graph.search("a".to_owned(),"b".to_owned());
+	let expected = Vec::new();
+	assert_eq!(path,Some(expected));
+    }
+
+    #[test]
+    fn test_no_route() {
+        let graph = Graph::build_graph(StringReader::new("a\nb\n"));
+        let path = graph.search("a".to_owned(),"b".to_owned());
+	assert_eq!(path,None)
+    }
 
     fn build_edges(edges: Vec<&str>) -> HashSet<String> {
         let mut h = HashSet::new();
