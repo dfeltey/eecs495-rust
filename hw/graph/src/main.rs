@@ -44,8 +44,12 @@ impl Graph {
                 if !seen.contains(edge){
                     neighbors_not_seen.insert(edge.to_owned());
                 }
-                graph.get_mut(vertex).expect("expected vertex is missing").insert(edge.to_owned());
-                graph.entry(edge.to_owned()).or_insert(HashSet::new()).insert(vertex.to_owned());
+                graph.get_mut(vertex)
+		  .expect("expected vertex is missing")
+		  .insert(edge.to_owned());
+                graph.entry(edge.to_owned())
+		     .or_insert(HashSet::new())
+		     .insert(vertex.to_owned());
             }
         }
         if !neighbors_not_seen.is_empty() {
@@ -61,7 +65,8 @@ impl Graph {
         }
     }
 
-    fn search<'a>(& 'a self, source : String, dest : String) -> Option<Vec<& 'a String>>{
+    fn search<'a>(& 'a self, source : String, dest : String)
+                 -> Option<Vec<& 'a String>>{
       let mut maybe_source_ptr : Option<&String> = None;
       let mut maybe_dest_ptr : Option<&String> = None;
       for (src,dests) in self.edges.iter() {
@@ -75,10 +80,11 @@ impl Graph {
 			dest_ptr)
     }
 
-    // this function is a variation
+    // this function is a variation of
     // https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm#Pseudocode
     // that handles disconnected graphs (I think that one doesn't, anyway)
-    fn search_ptr<'a>(& 'a self, source: & 'a String, dest : & 'a String) -> HashMap<&String,Option<&String>> {
+    fn search_ptr<'a>(& 'a self, source: & 'a String, dest : & 'a String)
+                     -> HashMap<&String,Option<&String>> {
       let mut dist : HashMap<&String,Option<u32>> = HashMap::new();
       let mut prev : HashMap<&String,Option<&String>> = HashMap::new();
       let mut Q : Vec<&String> = Vec::new();
@@ -104,7 +110,10 @@ impl Graph {
        prev
      }
 
-   fn build_path<'a>(prev : HashMap<&String,Option<& 'a String>>, source : & String, dest : & 'a String) -> Option<Vec<& 'a String>> {
+   fn build_path<'a>(prev : HashMap<&String,Option<& 'a String>>,
+                     source : & String,
+		     dest : & 'a String)
+                    -> Option<Vec<& 'a String>> {
      match prev.get(dest) {
        None => None,
        Some(_) => {
@@ -130,7 +139,9 @@ impl Graph {
       }
     }
 
-    fn min<'a>(Q: &mut Vec<& 'a String>, dist: &HashMap<&String,Option<u32>>) -> Option<& 'a String> {
+    fn min<'a>(Q: &mut Vec<& 'a String>,
+               dist: &HashMap<&String,Option<u32>>)
+               -> Option<& 'a String> {
       let mut best_node : Option<&String>  = None;
       let mut best_dist = None;
       for v in Q.iter() {
