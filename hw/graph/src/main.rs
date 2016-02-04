@@ -6,6 +6,7 @@ use std::fs::File;
 
 fn main() {
   let graph = parse_args_and_build_graph;
+    
   for line in BufReader::new(stdin()).lines() {
       // .. parse a line into two nodes
       // pass arguments to graph.search and print the path
@@ -70,6 +71,18 @@ impl Graph {
             panic!("a neighbor of some vertex does not appear on its own line");
         }
         return Graph{edges: edges};
+    }
+
+    fn print_path(path: Option<Vec<&String>>) {
+        match path {
+            None => print!("No path exists"),
+            Some(path) => {
+                for node in path {
+                    print!("{} ", node);
+                }
+            }
+        }
+        println!("");
     }
 
     fn search<'a>(& 'a self, source : String, dest : String)
