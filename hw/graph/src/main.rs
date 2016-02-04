@@ -5,7 +5,17 @@ use std::vec;
 use std::fs::File;
 
 fn main() {
-    Graph::new("foo.txt".to_owned());
+  let g = Graph::new("foo.txt".to_owned());
+  let o = g.search("a".to_owned(),"a".to_owned());
+  match o {
+    None => println!("no path found"),
+    Some(p) => {
+     println!("path found:");
+     for x in p.iter() {
+       println!("  {}",x);
+     }
+    }
+  }
 }
 
 #[derive(PartialEq,Debug)]
@@ -58,13 +68,6 @@ impl Graph {
         return Graph{edges: edges};
     }
 
-    fn neighbors(&self,node: String) -> &HashSet<String> {
-        match self.edges.get(&node) {
-            Some(hs) => hs,
-            None => panic!("No such node {}",node),
-        }
-    }
-
     fn search<'a>(& 'a self, source : String, dest : String)
                  -> Option<Vec<& 'a String>>{
       let mut maybe_source_ptr : Option<&String> = None;
@@ -89,22 +92,23 @@ impl Graph {
       let mut prev : HashMap<&String,Option<&String>> = HashMap::new();
       let mut Q : Vec<&String> = Vec::new();
       for (src,dests) in self.edges.iter() {
-        dist.entry(src).or_insert(None);
-        prev.entry(src).or_insert(None);
+        dist.insert(src,None);
+        prev.insert(src,None);
         Q.push(src)
       };
       dist.insert(source,Some(0));
+      println!("starting loop, source is {}", source);
       loop {
         match Graph::min(&mut Q,&dist) {
           None => break,
-          Some(u) =>
-            for v in self.edges.get(u).unwrap() {
-              let alt = (*(dist.get(v).unwrap())).map(|m| m+1);
-              if Graph::lt(&alt,dist.get(v).unwrap()) {
+          Some(u) => {
+            for v in self.edges.get(u).expect("1") {
+              let alt = (*(dist.get(u).expect("2"))).map(|m| m+1);
+              if Graph::lt(&alt,dist.get(v).expect("3")) {
                 dist.insert(v,alt);
                 prev.insert(v,Some(u));
               }
-            }
+            }}
          }
        };
        prev
@@ -114,15 +118,19 @@ impl Graph {
                      source : & String,
                      dest : & 'a String)
                     -> Option<Vec<& 'a String>> {
-     match prev.get(dest) {
-       None => None,
+     match *(prev.get(dest).unwrap()) {
+       None => if *source == *dest {
+                 let mut path = Vec::new();
+                 path.push(dest);
+		 Some(path)
+       	       } else { None },
        Some(_) => {
          let mut path = Vec::new();
          let mut node = dest;
          loop {
            path.push(node);
-           if node == source {break}
-             node = prev.get(node).unwrap().unwrap();
+           if *node == *source {break}
+             node = prev.get(node).expect("4").expect("5");
          };
          Some(path)
        }
@@ -133,7 +141,7 @@ impl Graph {
       match *n1 {
         None => false,
         Some(m1) => match *n2 {
-          None => false,
+          None => true,
           Some(m2) => m1 < m2
         }
       }
@@ -142,16 +150,23 @@ impl Graph {
     fn min<'a>(Q: &mut Vec<& 'a String>,
                dist: &HashMap<&String,Option<u32>>)
                -> Option<& 'a String> {
-      let mut best_node : Option<&String>  = None;
-      let mut best_dist = None;
-      for v in Q.iter() {
-        let v_dist = dist.get(v).unwrap();
-        if best_dist == None || best_dist.unwrap() > v_dist  {
-           best_dist = Some(v_dist);
-           best_node = Some(v);
+      let mut best_index : Option<usize> = None;
+      let mut best_dist : Option<u32> = None;
+      for i in 0..Q.len() {
+        let v = Q.get(i).expect("6b");
+        let v_dist = (dist.get(v)).expect("6");
+        if best_dist == None ||
+	   (*v_dist != None && best_dist.expect("7") > v_dist.expect("7b"))  {
+           best_dist = *v_dist;
+           best_index = Some(i);
         }
+      };
+      match best_index {
+        None => None,
+	Some(i) => {
+	  Some(Q.remove(i))
+	}
       }
-      None
     }
 }
 
@@ -212,10 +227,24 @@ mod graph_tests {
     }
 
     #[test]
+    fn test_zero_hops() {
+        let graph = Graph::build_graph(StringReader::new("a\n"));
+        let path = graph.search("a".to_owned(),"a".to_owned());
+	let a = "a".to_owned();
+        let mut expected : Vec<& String> = Vec::new();
+	expected.push(&a);
+        assert_eq!(path,Some(expected));
+    }
+
+    #[test]
     fn test_one_hop() {
         let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
         let path = graph.search("a".to_owned(),"b".to_owned());
-        let expected = Vec::new();
+	let a = "a".to_owned();
+	let b = "b".to_owned();
+        let mut expected : Vec<& String> = Vec::new();
+	expected.push(&b);
+	expected.push(&a);
         assert_eq!(path,Some(expected));
     }
 
@@ -223,6 +252,41 @@ mod graph_tests {
     fn test_no_route() {
         let graph = Graph::build_graph(StringReader::new("a\nb\n"));
         let path = graph.search("a".to_owned(),"b".to_owned());
+        assert_eq!(path,None)
+    }
+
+    #[test]
+    fn test_skip_loop() {
+        let graph = Graph::build_graph(StringReader::new("a b\nb c d\nc b\nd\n"));
+        let path = graph.search("a".to_owned(),"d".to_owned());
+	let a = "a".to_owned();
+	let b = "b".to_owned();
+	let d = "d".to_owned();
+        let mut expected : Vec<& String> = Vec::new();
+	expected.push(&d);
+	expected.push(&b);
+	expected.push(&a);
+        assert_eq!(path,Some(expected))
+    }
+
+    #[test]
+    fn test_path_in_disconnected_graph() {
+        let graph = Graph::build_graph(StringReader::new("a b\nb c\nc\nd e\ne\n"));
+        let path = graph.search("a".to_owned(),"c".to_owned());
+	let a = "a".to_owned();
+	let b = "b".to_owned();
+	let c = "c".to_owned();
+        let mut expected : Vec<& String> = Vec::new();
+	expected.push(&c);
+	expected.push(&b);
+	expected.push(&a);
+        assert_eq!(path,Some(expected))
+    }
+
+    #[test]
+    fn test_no_path_in_disconnected_graph() {
+        let graph = Graph::build_graph(StringReader::new("a b\nb c\nc\nd e\ne\n"));
+        let path = graph.search("a".to_owned(),"e".to_owned());
         assert_eq!(path,None)
     }
 
