@@ -5,18 +5,22 @@ use std::vec;
 use std::fs::File;
 
 fn main() {
-  let g = Graph::new("foo.txt".to_owned());
-  let o = g.search("a".to_owned(),"a".to_owned());
-  match o {
-    None => println!("no path found"),
-    Some(p) => {
-     println!("path found:");
-     for x in p.iter() {
-       println!("  {}",x);
-     }
-    }
+  let graph = parse_args_and_build_graph;
+  for line in BufReader::new(stdin()).lines() {
+      // .. parse a line into two nodes
+      // pass arguments to graph.search and print the path
   }
 }
+
+// IO functions
+fn parse_args_and_build_graph() -> Graph {
+    let arguments: Vec<String> = env::args().collect();
+    if arguments.len() != 2 {
+        panic!("Expected exactly one file passed as a command line argument");
+    }
+    Graph::new(&arguments[1])
+}
+
 
 #[derive(PartialEq,Debug)]
 struct Graph {
@@ -24,7 +28,7 @@ struct Graph {
 }
 
 impl Graph {
-    fn new(filename: String) -> Self {
+    fn new(filename: &String) -> Self {
         match File::open(filename) {
             Err(_) => panic!("couldn't open file"),
             Ok(file) => Graph::build_graph(file),
