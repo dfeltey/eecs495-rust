@@ -77,7 +77,7 @@ impl Graph {
         match path {
             None => print!("No path exists"),
             Some(path) => {
-                for node in path {
+                for node in path.iter().rev() {
                     print!("{} ", node);
                 }
             }
