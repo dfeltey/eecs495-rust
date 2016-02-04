@@ -1,15 +1,23 @@
 use std::collections::{HashMap,HashSet};
 use std::io::{BufReader,BufRead,Read,stdin};
 use std::env;
-use std::vec;
 use std::fs::File;
 
 fn main() {
-  let graph = parse_args_and_build_graph;
+  let graph = parse_args_and_build_graph();
     
-  for line in BufReader::new(stdin()).lines() {
-      // .. parse a line into two nodes
-      // pass arguments to graph.search and print the path
+  for line_result in BufReader::new(stdin()).lines() {
+    let line = line_result.expect("Failed to read");
+    let mut words = line.split_whitespace();
+    match words.next() {
+      None => {println!("expected a source node"); continue},
+      Some (source) =>
+      match words.next() {
+        None => {println!("expected a destination node"); continue},
+        Some (dest) =>
+          Graph::print_path(graph.search(source.to_owned(),dest.to_owned()))
+      }
+    }
   }
 }
 
@@ -95,28 +103,25 @@ impl Graph {
       }
       let source_ptr = maybe_source_ptr.expect("source node not in graph");
       let dest_ptr = maybe_dest_ptr.expect("source node not in graph");
-      Graph::build_path(self.search_ptr(source_ptr, dest_ptr),
-                        source_ptr,
-                        dest_ptr)
+      Graph::build_path(self.search_ptr(source_ptr), source_ptr, dest_ptr)
     }
 
     // this function is a variation of
     // https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm#Pseudocode
     // that handles disconnected graphs (I think that one doesn't, anyway)
-    fn search_ptr<'a>(& 'a self, source: & 'a String, dest : & 'a String)
+    fn search_ptr<'a>(& 'a self, source: & 'a String)
                      -> HashMap<&String,Option<&String>> {
       let mut dist : HashMap<&String,Option<u32>> = HashMap::new();
       let mut prev : HashMap<&String,Option<&String>> = HashMap::new();
-      let mut Q : Vec<&String> = Vec::new();
-      for (src,dests) in self.edges.iter() {
+      let mut q : Vec<&String> = Vec::new();
+      for (src,_) in self.edges.iter() {
         dist.insert(src,None);
         prev.insert(src,None);
-        Q.push(src)
+        q.push(src)
       };
       dist.insert(source,Some(0));
-      println!("starting loop, source is {}", source);
       loop {
-        match Graph::min(&mut Q,&dist) {
+        match Graph::min(&mut q,&dist) {
           None => break,
           Some(u) => {
             for v in self.edges.get(u).expect("1") {
@@ -139,8 +144,8 @@ impl Graph {
        None => if *source == *dest {
                  let mut path = Vec::new();
                  path.push(dest);
-		 Some(path)
-       	       } else { None },
+                 Some(path)
+               } else { None },
        Some(_) => {
          let mut path = Vec::new();
          let mut node = dest;
@@ -164,25 +169,25 @@ impl Graph {
       }
     }
 
-    fn min<'a>(Q: &mut Vec<& 'a String>,
+    fn min<'a>(q: &mut Vec<& 'a String>,
                dist: &HashMap<&String,Option<u32>>)
                -> Option<& 'a String> {
       let mut best_index : Option<usize> = None;
       let mut best_dist : Option<u32> = None;
-      for i in 0..Q.len() {
-        let v = Q.get(i).expect("6b");
+      for i in 0..q.len() {
+        let v = q.get(i).expect("6b");
         let v_dist = (dist.get(v)).expect("6");
         if best_dist == None ||
-	   (*v_dist != None && best_dist.expect("7") > v_dist.expect("7b"))  {
+           (*v_dist != None && best_dist.expect("7") > v_dist.expect("7b"))  {
            best_dist = *v_dist;
            best_index = Some(i);
         }
       };
       match best_index {
         None => None,
-	Some(i) => {
-	  Some(Q.remove(i))
-	}
+        Some(i) => {
+          Some(q.remove(i))
+        }
       }
     }
 }
@@ -191,7 +196,7 @@ impl Graph {
 #[cfg(test)]
 mod graph_tests {
     use super::Graph;
-    use std::io::{BufReader,BufRead,Read};
+    use std::io::Read;
     use std::io::Result;
     use std::collections::{HashMap,HashSet};
 
@@ -247,9 +252,9 @@ mod graph_tests {
     fn test_zero_hops() {
         let graph = Graph::build_graph(StringReader::new("a\n"));
         let path = graph.search("a".to_owned(),"a".to_owned());
-	let a = "a".to_owned();
+        let a = "a".to_owned();
         let mut expected : Vec<& String> = Vec::new();
-	expected.push(&a);
+        expected.push(&a);
         assert_eq!(path,Some(expected));
     }
 
@@ -257,11 +262,11 @@ mod graph_tests {
     fn test_one_hop() {
         let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
         let path = graph.search("a".to_owned(),"b".to_owned());
-	let a = "a".to_owned();
-	let b = "b".to_owned();
+        let a = "a".to_owned();
+        let b = "b".to_owned();
         let mut expected : Vec<& String> = Vec::new();
-	expected.push(&b);
-	expected.push(&a);
+        expected.push(&b);
+        expected.push(&a);
         assert_eq!(path,Some(expected));
     }
 
@@ -276,13 +281,13 @@ mod graph_tests {
     fn test_skip_loop() {
         let graph = Graph::build_graph(StringReader::new("a b\nb c d\nc b\nd\n"));
         let path = graph.search("a".to_owned(),"d".to_owned());
-	let a = "a".to_owned();
-	let b = "b".to_owned();
-	let d = "d".to_owned();
+        let a = "a".to_owned();
+        let b = "b".to_owned();
+        let d = "d".to_owned();
         let mut expected : Vec<& String> = Vec::new();
-	expected.push(&d);
-	expected.push(&b);
-	expected.push(&a);
+        expected.push(&d);
+        expected.push(&b);
+        expected.push(&a);
         assert_eq!(path,Some(expected))
     }
 
@@ -290,13 +295,25 @@ mod graph_tests {
     fn test_path_in_disconnected_graph() {
         let graph = Graph::build_graph(StringReader::new("a b\nb c\nc\nd e\ne\n"));
         let path = graph.search("a".to_owned(),"c".to_owned());
-	let a = "a".to_owned();
-	let b = "b".to_owned();
-	let c = "c".to_owned();
+        let a = "a".to_owned();
+        let b = "b".to_owned();
+        let c = "c".to_owned();
         let mut expected : Vec<& String> = Vec::new();
-	expected.push(&c);
-	expected.push(&b);
-	expected.push(&a);
+        expected.push(&c);
+        expected.push(&b);
+        expected.push(&a);
+        assert_eq!(path,Some(expected))
+    }
+
+    #[test]
+    fn test_shortest_path() {
+        let graph = Graph::build_graph(StringReader::new("a b c\nb c\nc\n"));
+        let path = graph.search("a".to_owned(),"c".to_owned());
+        let a = "a".to_owned();
+        let c = "c".to_owned();
+        let mut expected : Vec<& String> = Vec::new();
+        expected.push(&c);
+        expected.push(&a);
         assert_eq!(path,Some(expected))
     }
 
