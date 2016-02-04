@@ -11,15 +11,18 @@ fn main() {
     let mut words = line.split_whitespace();
     match words.next() {
       None => {println!("expected a source node"); continue},
-      Some (source) =>
-      match words.next() {
-        None => {println!("expected a destination node"); continue},
-        Some (dest) =>
-          Graph::print_path(graph.search(source.to_owned(),dest.to_owned()))
-      }
-    }
-  }
-}
+      Some (source) => {
+        match graph.find_it(source.to_owned()) {
+        None => {println!("source node {} not in graph", source);continue},
+        Some (source_ptr) =>
+          match words.next() {
+            None => {println!("expected a destination node"); continue},
+            Some (dest) =>
+            match graph.find_it(dest.to_owned()) {
+              None => {println!("destination node {} not in graph", dest);continue},
+              Some (dest_ptr) =>
+                Graph::print_path(Graph::build_path(graph.search(source_ptr),
+                                  source_ptr, dest_ptr))}}}}}}}
 
 // IO functions
 fn parse_args_and_build_graph() -> Graph {
@@ -85,32 +88,30 @@ impl Graph {
         match path {
             None => print!("No path exists"),
             Some(path) => {
+                let mut first = true;
                 for node in path.iter().rev() {
-                    print!("{} ", node);
+                    if !first { print!(" "); }
+                    first=false;
+                    print!("{}", node);
                 }
             }
         }
         println!("");
     }
 
-    fn search<'a>(& 'a self, source : String, dest : String)
-                 -> Option<Vec<& 'a String>>{
-      let mut maybe_source_ptr : Option<&String> = None;
-      let mut maybe_dest_ptr : Option<&String> = None;
-      for src in self.edges.keys() {
-        if source == *src { maybe_source_ptr = Some(src) }
-        if dest == *src { maybe_dest_ptr = Some(src) }
+    fn find_it(& self, the_node : String) -> Option<& String> {
+      let mut maybe_ptr : Option<&String> = None;
+      for a_node in self.edges.keys() {
+        if the_node == *a_node { maybe_ptr = Some(a_node) }
       }
-      let source_ptr = maybe_source_ptr.expect("source node not in graph");
-      let dest_ptr = maybe_dest_ptr.expect("source node not in graph");
-      Graph::build_path(self.search_ptr(source_ptr), source_ptr, dest_ptr)
+      maybe_ptr
     }
 
     // this function is a variation of
     // https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm#Pseudocode
     // that handles disconnected graphs (I think that one doesn't, anyway)
-    fn search_ptr<'a>(& 'a self, source: & 'a String)
-                     -> HashMap<&String,Option<&String>> {
+    fn search<'a>(& 'a self, source: & 'a String)
+                 -> HashMap<&String,Option<&String>> {
       let mut dist : HashMap<&String,Option<u32>> = HashMap::new();
       let mut prev : HashMap<&String,Option<&String>> = HashMap::new();
       let mut q : Vec<&String> = Vec::new();
