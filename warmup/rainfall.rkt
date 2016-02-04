@@ -17,16 +17,14 @@
 
 ;; count : nonnegative (listof nonnegative?) boolean? -> natural
 (define (count mean readings below?)
-  (for/sum ([reading (in-list readings)])
-    (if (include? mean reading below?)
-        1
-        0)))
+  (for/sum ([reading (in-list readings)]
+            #:when (include? mean reading below?))
+    1))
 
 ;; include? : real? real? boolean? -> boolean?
 (define (include? mean reading below?)
-  (if below?
-      (and (> mean reading) (<= (- mean 5) reading))
-      (and (< mean reading) (>= (+ mean 5) reading))))
+  (and (<= (abs (- mean reading)) 5)
+       (if below? (> mean reading) (< mean reading))))
 
 (define (get-readings in)
   (for*/list ([line (in-lines (terminate-on-999 in))]
