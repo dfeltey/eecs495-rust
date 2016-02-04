@@ -22,7 +22,7 @@ impl Graph {
     }
 
     fn build_graph<R : Read>(reader: R) -> Self {
-        let mut graph = HashMap::new();
+        let mut edges = HashMap::new();
         // keep track of which nodes have been mentioned as neighbors
         // to make sure they all start a line as well
         let mut neighbors_not_seen = HashSet::new();
@@ -32,7 +32,7 @@ impl Graph {
             let line = line_result.expect("Failed to read");
             let mut words = line.split_whitespace();
             let vertex = words.next().expect("No Vertex to read");
-            graph.entry(vertex.to_owned()).or_insert(HashSet::new());
+            edges.entry(vertex.to_owned()).or_insert(HashSet::new());
             if seen.contains(vertex) {
                 panic!("A vertex appears on multiple lines")
             }
@@ -44,10 +44,10 @@ impl Graph {
                 if !seen.contains(edge){
                     neighbors_not_seen.insert(edge.to_owned());
                 }
-                graph.get_mut(vertex)
+                edges.get_mut(vertex)
                      .expect("expected vertex is missing")
                      .insert(edge.to_owned());
-                graph.entry(edge.to_owned())
+                edges.entry(edge.to_owned())
                      .or_insert(HashSet::new())
                      .insert(vertex.to_owned());
             }
@@ -55,7 +55,7 @@ impl Graph {
         if !neighbors_not_seen.is_empty() {
             panic!("a neighbor of some vertex does not appear on its own line");
         }
-        return Graph{edges: graph};
+        return Graph{edges: edges};
     }
 
     fn neighbors(&self,node: String) -> &HashSet<String> {
