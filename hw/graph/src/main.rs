@@ -72,7 +72,7 @@ impl Graph {
                  -> Option<Vec<& 'a String>>{
       let mut maybe_source_ptr : Option<&String> = None;
       let mut maybe_dest_ptr : Option<&String> = None;
-      for (src,dests) in self.edges.iter() {
+      for src in self.edges.keys() {
         if source == *src { maybe_source_ptr = Some(src) }
         if dest == *src { maybe_dest_ptr = Some(src) }
       }
