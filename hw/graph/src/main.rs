@@ -1,3 +1,11 @@
+// Dan Feltey, Robby Findler
+// graph search
+/*
+Assumptions:
+ Duplicated nodes are allowed in the list of neighbors to a node
+ - ie if graph.dat contains the line "a b d b" this is not
+   an error, and b will be added as a neigbor of a only once
+*/
 use std::collections::{HashMap,HashSet};
 use std::io::{BufReader,BufRead,Read,stdin};
 use std::env;
@@ -201,6 +209,12 @@ mod graph_tests {
     use std::io::Result;
     use std::collections::{HashMap,HashSet};
 
+    fn test_path<'a>(graph: &'a Graph, src: &str, dst: &str) -> Option<Vec<&'a String>>{
+        let src_ptr = graph.find_it(src.to_owned()).expect("No source node");
+        let dst_ptr = graph.find_it(dst.to_owned()).expect("No destination node");
+        Graph::build_path(graph.search(src_ptr), src_ptr,dst_ptr)
+    }
+
 
     #[test]
     #[should_panic]
@@ -239,20 +253,20 @@ mod graph_tests {
     #[should_panic]
     fn test_badsearch1() {
         let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
-        graph.search("a".to_owned(),"c".to_owned());
+        test_path(&graph,"a","c");
     }
 
     #[test]
     #[should_panic]
     fn test_badsearch2() {
         let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
-        graph.search("c".to_owned(),"a".to_owned());
+        test_path(&graph,"c","a");
     }
 
     #[test]
     fn test_zero_hops() {
         let graph = Graph::build_graph(StringReader::new("a\n"));
-        let path = graph.search("a".to_owned(),"a".to_owned());
+        let path = test_path(&graph,"a","a");
         let a = "a".to_owned();
         let mut expected : Vec<& String> = Vec::new();
         expected.push(&a);
@@ -262,7 +276,7 @@ mod graph_tests {
     #[test]
     fn test_one_hop() {
         let graph = Graph::build_graph(StringReader::new("a b\nb\n"));
-        let path = graph.search("a".to_owned(),"b".to_owned());
+        let path = test_path(&graph,"a","b");
         let a = "a".to_owned();
         let b = "b".to_owned();
         let mut expected : Vec<& String> = Vec::new();
@@ -274,14 +288,14 @@ mod graph_tests {
     #[test]
     fn test_no_route() {
         let graph = Graph::build_graph(StringReader::new("a\nb\n"));
-        let path = graph.search("a".to_owned(),"b".to_owned());
+        let path = test_path(&graph,"a","b");
         assert_eq!(path,None)
     }
 
     #[test]
     fn test_skip_loop() {
         let graph = Graph::build_graph(StringReader::new("a b\nb c d\nc b\nd\n"));
-        let path = graph.search("a".to_owned(),"d".to_owned());
+        let path = test_path(&graph,"a","d");
         let a = "a".to_owned();
         let b = "b".to_owned();
         let d = "d".to_owned();
@@ -295,7 +309,7 @@ mod graph_tests {
     #[test]
     fn test_path_in_disconnected_graph() {
         let graph = Graph::build_graph(StringReader::new("a b\nb c\nc\nd e\ne\n"));
-        let path = graph.search("a".to_owned(),"c".to_owned());
+        let path = test_path(&graph,"a","c");
         let a = "a".to_owned();
         let b = "b".to_owned();
         let c = "c".to_owned();
@@ -309,7 +323,7 @@ mod graph_tests {
     #[test]
     fn test_shortest_path() {
         let graph = Graph::build_graph(StringReader::new("a b c\nb c\nc\n"));
-        let path = graph.search("a".to_owned(),"c".to_owned());
+        let path = test_path(&graph,"a","c");
         let a = "a".to_owned();
         let c = "c".to_owned();
         let mut expected : Vec<& String> = Vec::new();
@@ -321,7 +335,7 @@ mod graph_tests {
     #[test]
     fn test_no_path_in_disconnected_graph() {
         let graph = Graph::build_graph(StringReader::new("a b\nb c\nc\nd e\ne\n"));
-        let path = graph.search("a".to_owned(),"e".to_owned());
+        let path = test_path(&graph,"a","e");
         assert_eq!(path,None)
     }
 
