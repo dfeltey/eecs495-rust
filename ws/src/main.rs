@@ -1,6 +1,6 @@
 use std::net::{TcpListener, TcpStream};
 use std::thread;
-use std::io::{BufReader,BufRead,Read};
+use std::io::{BufReader,BufRead,Read,Write};
 use std::fs::File;
 use std::str;
 
@@ -25,21 +25,39 @@ for stream in listener.incoming() {
         Err(_) => { /* connection failed */ }
     }
 }
-
-drop(listener);
 }
 
 fn handle_client(stream: TcpStream) {
-  match parse_request(stream) {
+  let mut reader = BufReader::new(stream);
+  match parse_request(&mut reader) {
     Some(s) => {
-      let fh = File::open(s);
+      let fho = File::open(s);
+      match fho {
+        Ok(mut fh) => {
+          let mut buf = vec![0;1024];
+	  let mut stream = reader.into_inner();
+	  loop {
+            match fh.read(&mut buf) {
+	      Ok(n) => {
+               if n==0 {break};
+	       match stream.write_all(&buf[0..n]) {
+	         Ok(_) => {}
+		 Err(_) => {break}
+	       }
+	      },
+	      Err(_) => {break;}
+	    }
+          }        
+	},
+	Err(_) => {}
+      }
     },
     None => {}
   };
 }
-
-fn parse_request<R:Read>(stream : R) -> Option<String> {
-  let mut reader = BufReader::new(stream);
+// there's a way to get the data back from a bufreader when you're done. inner something.
+// pass in a bufreader.
+fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
   let mut line = Vec::new();
   let prefix = String::from("GET ").into_bytes();
   let prefix_size = prefix.len();
