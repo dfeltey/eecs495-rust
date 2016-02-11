@@ -1,0 +1,4 @@
+[package]
+name = "ws"
+version = "0.1.0"
+authors = ["Robby Findler <robby@racket-lang.org>"]
