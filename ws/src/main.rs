@@ -1,14 +1,14 @@
 use std::net::{TcpListener, TcpStream};
 use std::thread;
-use std::io::{BufReader,BufRead,Read,Write};
+use std::io::{BufReader,BufRead,Read,Write,ErrorKind};
 use std::fs::File;
 use std::str;
 
 // path specified in a GET request has to be
-// well-formed utf-8 bytes (because I can't
-// figure out how Rust's std library enough
-// to open a file without first converting it
-// to a String)
+// well-formed utf-8 bytes
+
+// if a GET request doesn't have the leading / in a path,
+// it gets a 400, not a 404 or 403
 
 // copied from docs
 fn main() {
@@ -29,38 +29,52 @@ for stream in listener.incoming() {
 
 fn handle_client(stream: TcpStream) {
   let mut reader = BufReader::new(stream);
-  match parse_request(&mut reader) {
-    Some(s) => {
-      let fho = File::open(s);
-      match fho {
-        Ok(mut fh) => {
-          let mut buf = vec![0;1024];
-	  let mut stream = reader.into_inner();
-	  loop {
-            match fh.read(&mut buf) {
-	      Ok(n) => {
-               if n==0 {break};
-	       match stream.write_all(&buf[0..n]) {
-	         Ok(_) => {}
-		 Err(_) => {break}
-	       }
-	      },
-	      Err(_) => {break;}
-	    }
-          }        
-	},
-	Err(_) => {}
-      }
-    },
-    None => {}
-  };
+  let whatever = parse_request(&mut reader);
+  let stream = reader.into_inner();
+  match whatever {
+    Some(s) => 
+      match File::open(s) {
+        Ok(fh) => send200(stream,fh),
+	Err(x) =>
+	match x.kind() {
+	  ErrorKind::NotFound => send404(stream),
+	  _ => send405(stream)}
+      },
+    None => send400(stream)
+  }
+}
+
+fn send200(mut stream: TcpStream, mut fh: File) {
+  response(&stream, 200);
+  let mut buf = vec![0;1024];
+  loop {
+    match fh.read(&mut buf) {
+      Ok(n) => {
+      if n==0 {break};
+      match stream.write_all(&buf[0..n]) {
+        Ok(_) => {}
+        Err(_) => {break}
+       }
+     },
+    Err(_) => break
+    }
+  }
+}
+
+fn send400(mut stream: TcpStream) {response(&stream,400)}
+fn send404(mut stream: TcpStream) {response(&stream,404)}
+fn send405(mut stream: TcpStream) {response(&stream,405)}
+
+fn response(mut stream: &TcpStream, code: u16) {
+  let s = String::from("whatever").into_bytes();
+  stream.write_all(&s[0..s.len()]);
 }
 
 fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
   let mut line = Vec::new();
-  let prefix = String::from("GET ").into_bytes();
+  let prefix = String::from("GET /").into_bytes();
   let prefix_size = prefix.len();
-  let suffix = String::from(" HTTP\r\n").into_bytes();
+  let suffix = String::from(" HTTP 1.0\r\n").into_bytes();
   let suffix_size = suffix.len();
   match reader.read_until(b'\n', &mut line) {
     Ok(n) => {
@@ -78,34 +92,34 @@ fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
 
 #[cfg(test)]
 mod graph_tests {
-  use std::io::{Result,Read};
+  use std::io::{Result,Read,BufReader};
 
 
   #[test]
   fn parse_request_test() {
-    assert_eq!(super::parse_request(BytesReader::new("")),None);
-    assert_eq!(super::parse_request(BytesReader::new("GET HTTP\r\n")),None);
-    assert_eq!(super::parse_request(BytesReader::new("GET  HTTP\r\n")),
+    assert_eq!(super::parse_request(&mut parg("")),None);
+    assert_eq!(super::parse_request(&mut parg("GET HTTP\r\n")),None);
+    assert_eq!(super::parse_request(&mut parg("GET / HTTP 1.0\r\n")),
                Some("".to_owned()));
-    assert_eq!(super::parse_request(BytesReader::new("GET /a/b/c HTTP\r\n")),
-               Some("/a/b/c".to_owned()));
-    assert_eq!(super::parse_request(BytesReader::new("GET /a/b b/c HTTP\r\n")),
-               Some("/a/b b/c".to_owned()));
+    assert_eq!(super::parse_request(&mut parg("GET /a/b/c HTTP 1.0\r\n")),
+               Some("a/b/c".to_owned()));
+    assert_eq!(super::parse_request(&mut parg("GET /a/b b/c HTTP 1.0\r\n")),
+               Some("a/b b/c".to_owned()));
 
-    let prefix="GET ".to_owned().into_bytes();
-    let suffix=" HTTP\r\n".to_owned().into_bytes();
+    let prefix="GET /".to_owned().into_bytes();
+    let suffix=" HTTP 1.0\r\n".to_owned().into_bytes();
 
     let mut blank=Vec::new();
     blank.append(&mut prefix.to_owned());
     blank.append(&mut suffix.to_owned());
-    assert_eq!(super::parse_request(BytesReader{contents:blank,position:0}),
+    assert_eq!(super::parse_request(&mut BufReader::new(BytesReader{contents:blank,position:0})),
                Some("".to_owned()));
 
     let mut one_char=Vec::new();
     one_char.append(&mut prefix.to_owned());
     one_char.append(& mut(vec![97]));
     one_char.append(&mut suffix.to_owned());
-    assert_eq!(super::parse_request(BytesReader{contents:one_char,position:0}),
+    assert_eq!(super::parse_request(&mut BufReader::new(BytesReader{contents:one_char,position:0})),
                Some("a".to_owned()));
 
 
@@ -113,10 +127,12 @@ mod graph_tests {
     not_utf8.append(&mut prefix.to_owned());
     not_utf8.append(& mut(vec![255,255]));
     not_utf8.append(&mut suffix.to_owned());
-    assert_eq!(super::parse_request(BytesReader{contents:not_utf8,position:0}),
+    assert_eq!(super::parse_request(&mut BufReader::new(BytesReader{contents:not_utf8,position:0})),
                None)
 
   }
+
+   fn parg(s:&'static str) -> BufReader<BytesReader> {BufReader::new(BytesReader::new(s))}
 
     struct BytesReader {
         contents: Vec<u8>,
