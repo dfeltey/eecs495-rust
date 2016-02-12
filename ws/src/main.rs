@@ -27,20 +27,49 @@ for stream in listener.incoming() {
 }
 }
 
-fn handle_client(stream: TcpStream) {
-  let mut reader = BufReader::new(stream);
+#[derive(Debug)]
+enum Response {
+  R200{fh: File},
+  R400,
+  R403,
+  R404
+}
+
+impl PartialEq for Response {
+  fn eq(&self, that: &Response) -> bool {
+    match self {
+      &Response::R200{ref fh} => match *that {Response::R200{ref fh} => true, _ => false},
+      &Response::R400 => match *that {Response::R400 => true, _ => false},
+      &Response::R403 => match *that {Response::R403 => true, _ => false},
+      &Response::R404 => match *that {Response::R404 => true, _ => false},
+    }
+  }
+}
+
+fn determine_response<R:Read>(mut reader : &mut BufReader<R>) -> Response {
   let whatever = parse_request(&mut reader);
-  let stream = reader.into_inner();
   match whatever {
     Some(s) => 
       match File::open(s) {
-        Ok(fh) => send200(stream,fh),
+        Ok(fh) => Response::R200{fh:fh},
 	Err(x) =>
 	match x.kind() {
-	  ErrorKind::NotFound => send404(stream),
-	  _ => send405(stream)}
+	  ErrorKind::NotFound => Response::R404,
+	  _ => Response::R403}
       },
-    None => send400(stream)
+    None => Response::R400
+  }
+}
+
+fn handle_client(stream: TcpStream) {
+  let mut reader = BufReader::new(stream);
+  let whatever = determine_response(&mut reader);
+  let stream = reader.into_inner();
+  match whatever {
+    Response::R200{fh} => send200(stream,fh),
+    Response::R400 => send400(stream),
+    Response::R403 => send403(stream),
+    Response::R404 => send404(stream),
   }
 }
 
@@ -62,6 +91,7 @@ fn send200(mut stream: TcpStream, mut fh: File) {
 }
 
 fn send400(mut stream: TcpStream) {response(&stream,400)}
+fn send403(mut stream: TcpStream) {response(&stream,404)}
 fn send404(mut stream: TcpStream) {response(&stream,404)}
 fn send405(mut stream: TcpStream) {response(&stream,405)}
 
@@ -93,17 +123,17 @@ fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
 #[cfg(test)]
 mod graph_tests {
   use std::io::{Result,Read,BufReader};
-
+  use super::Response;
 
   #[test]
   fn parse_request_test() {
-    assert_eq!(super::parse_request(&mut parg("")),None);
-    assert_eq!(super::parse_request(&mut parg("GET HTTP\r\n")),None);
-    assert_eq!(super::parse_request(&mut parg("GET / HTTP 1.0\r\n")),
+    assert_eq!(super::parse_request(&mut stor("")),None);
+    assert_eq!(super::parse_request(&mut stor("GET HTTP\r\n")),None);
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP 1.0\r\n")),
                Some("".to_owned()));
-    assert_eq!(super::parse_request(&mut parg("GET /a/b/c HTTP 1.0\r\n")),
+    assert_eq!(super::parse_request(&mut stor("GET /a/b/c HTTP 1.0\r\n")),
                Some("a/b/c".to_owned()));
-    assert_eq!(super::parse_request(&mut parg("GET /a/b b/c HTTP 1.0\r\n")),
+    assert_eq!(super::parse_request(&mut stor("GET /a/b b/c HTTP 1.0\r\n")),
                Some("a/b b/c".to_owned()));
 
     let prefix="GET /".to_owned().into_bytes();
@@ -132,8 +162,15 @@ mod graph_tests {
 
   }
 
-   fn parg(s:&'static str) -> BufReader<BytesReader> {BufReader::new(BytesReader::new(s))}
+  // note: this test depends on `cargo run` happening
+  // in the `ws` directory
+  #[test]
+  fn correct_response_test() {
+      assert_eq!(super::determine_response(&mut stor("GET /dne HTTP\r\n")),
+                 Response::R404);
+  }
 
+   fn stor(s:&'static str) -> BufReader<BytesReader> {BufReader::new(BytesReader::new(s))}
     struct BytesReader {
         contents: Vec<u8>,
         position: usize,
