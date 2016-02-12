@@ -55,8 +55,7 @@ fn handle_client(stream: TcpStream) {
     None => {}
   };
 }
-// there's a way to get the data back from a bufreader when you're done. inner something.
-// pass in a bufreader.
+
 fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
   let mut line = Vec::new();
   let prefix = String::from("GET ").into_bytes();
