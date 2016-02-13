@@ -104,18 +104,14 @@ fn atomic_log_response(response:&Response) {
      .write(true).create(true).append(true)
      .open("log.txt").unwrap();
   match response {
-  &Response::R200{fh:_,ref file} => {
-    log_line(&log_file,String::from("200"),&(file.to_owned().into_bytes()));
-  },
-  &Response::R400{ref request} => {
-    log_line(&log_file,String::from("400"),request);
-  }
-  &Response::R403{ref file} => {
-    log_line(&log_file,String::from("403"),&(file.to_owned().into_bytes()));
-  }
-  &Response::R404{ref file} => {
-    log_line(&log_file,String::from("404"),&(file.to_owned().into_bytes()));
-  }
+  &Response::R200{fh:_,ref file} =>
+    log_line(&log_file,String::from("200"),&(file.to_owned().into_bytes())),
+  &Response::R400{ref request} =>
+    log_line(&log_file,String::from("400"),request),
+  &Response::R403{ref file} =>
+    log_line(&log_file,String::from("403"),&(file.to_owned().into_bytes())),
+  &Response::R404{ref file} =>
+    log_line(&log_file,String::from("404"),&(file.to_owned().into_bytes())),
   }
 }
 
