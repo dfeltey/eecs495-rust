@@ -104,40 +104,113 @@ fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
   let mut line = Vec::new();
   let prefix = String::from("GET /").into_bytes();
   let prefix_size = prefix.len();
-  let suffix = String::from(" HTTP 1.0\r\n").into_bytes();
-  let suffix_size = suffix.len();
   match reader.read_until(b'\n', &mut line) {
     Ok(n) => {
-     if n >= prefix.len() + suffix.len() &&
-        &line[0..prefix_size] == &prefix[0..prefix_size] &&
-        &line[line.len()-suffix_size..line.len()] == &suffix[0..suffix_size] {
-     match str::from_utf8(&line[prefix_size..line.len()-suffix_size]) {
-       Ok(s) => Some(s.to_owned()),
-       Err(_) => None
-     }
-     } else { None }},
-   Err(_) => None
+      if n >= prefix.len() &&
+          &line[0..prefix_size] == &prefix[0..prefix_size] {
+        match valid_suffix(&line) {
+          Some(suffix_size) => {
+            match str::from_utf8(&line[prefix_size..line.len()-suffix_size]) {
+              Ok(s) => Some(s.to_owned()),
+              Err(_) => None
+            }},
+	  None => None
+        }
+      } else { None }},
+    Err(_) => None
   }
+}
+
+// this is a little finite state machine that
+// recognizes the regexp #rx" HTTP(/[0-9]+[.][0-9]+)?\r\n"
+fn valid_suffix(s : &Vec<u8>) -> Option<usize> {
+  if s.len() <= 2 {return None};
+  if s[s.len()-1] != '\n' as u8 {return None};
+  if s[s.len()-2] != '\r' as u8 {return None};
+  let mut i=s.len()-3;
+  if i==0 {return None};
+  if s[i]=='P' as u8 {
+    check_http(s,i)
+  } else {
+    loop {
+      if i==0 {return None}
+      if s[i] == '.' as u8 { i-=1 ; break }
+      if s[i] <= '9' as u8 || s[i] >= '0' as u8 {
+        i-=1
+      } else {
+        return None
+      }
+    }
+    loop {
+      if s[i] == '/' as u8 { break }
+      if i==0 {return None}
+      if s[i] <= '9' as u8 || s[i] >= '0' as u8 {
+        i-=1
+      } else {
+        return None
+      }
+    }
+    check_http(s,i-1)
+  }
+}
+
+fn check_http(s : &
+Vec<u8>,i : usize) -> Option<usize> {
+    if i < 4  {return None};
+    if s[i-4] != ' ' as u8 {return None};
+    if s[i-3] != 'H' as u8 {return None};
+    if s[i-2] != 'T' as u8 {return None};
+    if s[i-1] != 'T' as u8 {return None};
+    if s[i]   != 'P' as u8 {return None};
+    return Some(s.len()-(i-4))
 }
 
 #[cfg(test)]
 mod graph_tests {
   use std::io::{Result,Read,BufReader};
   use super::Response;
+  use super::valid_suffix;
+
+  #[test]
+  fn valid_suffix_test() {
+    assert_eq!(valid_suffix(&String::from("").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from("\n").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from("\r\n").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from("HTTP\r\n").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from(" HTTP\r\n").into_bytes()),Some(7));
+    assert_eq!(valid_suffix(&String::from(" HxTP\r\n").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from(" THTP\r\n").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from(" HTP\r\n").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from(" HTTP/1.0\r\n").into_bytes()),Some(11));
+    assert_eq!(valid_suffix(&String::from(" HTTP/14.99\r\n").into_bytes()),Some(13));
+    assert_eq!(valid_suffix(&String::from(" HTT_/14.99\r\n").into_bytes()),None);
+    assert_eq!(valid_suffix(&String::from(" HTTP/13399\r\n").into_bytes()),None);
+  }
+
 
   #[test]
   fn parse_request_test() {
     assert_eq!(super::parse_request(&mut stor("")),None);
     assert_eq!(super::parse_request(&mut stor("GET HTTP\r\n")),None);
-    assert_eq!(super::parse_request(&mut stor("GET / HTTP 1.0\r\n")),
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/1.0\r\n")),
                Some("".to_owned()));
-    assert_eq!(super::parse_request(&mut stor("GET /a/b/c HTTP 1.0\r\n")),
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP\r\n")),
+               Some("".to_owned()));
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/0.9\r\n")),
+               Some("".to_owned()));
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/123.3542\r\n")),
+               Some("".to_owned()));
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/1233542\r\n")),
+               None);
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/xyzpqr\r\n")),
+               None);
+    assert_eq!(super::parse_request(&mut stor("GET /a/b/c HTTP/1.0\r\n")),
                Some("a/b/c".to_owned()));
-    assert_eq!(super::parse_request(&mut stor("GET /a/b b/c HTTP 1.0\r\n")),
+    assert_eq!(super::parse_request(&mut stor("GET /a/b b/c HTTP/1.0\r\n")),
                Some("a/b b/c".to_owned()));
 
     let prefix="GET /".to_owned().into_bytes();
-    let suffix=" HTTP 1.0\r\n".to_owned().into_bytes();
+    let suffix=" HTTP/1.0\r\n".to_owned().into_bytes();
 
     let mut blank=Vec::new();
     blank.append(&mut prefix.to_owned());
