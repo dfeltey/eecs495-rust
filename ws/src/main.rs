@@ -1,8 +1,9 @@
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::io::{BufReader,BufRead,Read,Write,ErrorKind};
-use std::fs::File;
+use std::fs::{self,File,OpenOptions};
 use std::str;
+use std::result;
 
 // path specified in a GET request has to be
 // well-formed utf-8 bytes
@@ -29,47 +30,105 @@ for stream in listener.incoming() {
 
 #[derive(Debug)]
 enum Response {
-  R200{fh: File},
-  R400,
-  R403,
-  R404
+  R200{fh: File, file:String},
+  R400{request:Vec<u8>},
+  R403{file:String},
+  R404{file:String},
 }
 
 impl PartialEq for Response {
   fn eq(&self, that: &Response) -> bool {
     match self {
-      &Response::R200{ref fh} => match *that {Response::R200{ref fh} => true, _ => false},
-      &Response::R400 => match *that {Response::R400 => true, _ => false},
-      &Response::R403 => match *that {Response::R403 => true, _ => false},
-      &Response::R404 => match *that {Response::R404 => true, _ => false},
+      &Response::R200{ref fh, ref file} =>
+        match *that {Response::R200{ref fh, ref file} => true, _ => false},
+      &Response::R400{request: ref request1} =>
+        match *that {Response::R400{request: ref request2} => request1==request2, _ => false},
+      &Response::R403{file: ref file1} =>
+        match *that {Response::R403{file: ref file2} => file1==file2, _ => false},
+      &Response::R404{file: ref file1} =>
+        match *that {Response::R404{file: ref file2} => file1==file2, _ => false},
     }
   }
 }
 
 fn determine_response<R:Read>(mut reader : &mut BufReader<R>) -> Response {
-  let whatever = parse_request(&mut reader);
-  match whatever {
-    Some(s) => 
-      match File::open(s) {
-        Ok(fh) => Response::R200{fh:fh},
-	Err(x) =>
-	match x.kind() {
-	  ErrorKind::NotFound => Response::R404,
-	  _ => Response::R403}
-      },
-    None => Response::R400
+  let parsed_request = parse_request(&mut reader);
+  match parsed_request {
+  Ok(s) => {
+    match fs::metadata(&s) {
+    Ok (md) => 
+      if md.is_dir() {
+        try_to_open_file(&(s.to_owned() + "/index.html"),
+        |x,_| try_to_open_file(&(s.to_owned() + "/index.shtml"),
+        |x,_| try_to_open_file(&(s.to_owned() + "/index.txt"),
+        |x,_| give_up(x,&s))))
+      } else if md.is_file() {
+        try_to_open_file(&s,give_up)
+      } else {Response::R404{file:s.to_owned()}},
+    Err(x) =>
+      match x.kind() {
+      ErrorKind::NotFound => Response::R404{file:s.to_owned()},
+      _ => Response::R403{file:s.to_owned()}
+      }
+    }},
+  Err(s) => Response::R400{request:s}
+}}
+
+fn try_to_open_file<K>(s : &String, k: K) -> Response
+  where K : Fn(std::io::Error,&String) -> Response {
+  match File::open(s) {
+  Ok(fh) => Response::R200{fh:fh,file:s.to_owned()},
+  Err(x) => k(x,s)
   }
+}
+
+fn give_up(x:std::io::Error, s: &String) -> Response {
+  match x.kind() {
+  ErrorKind::NotFound => Response::R404{file:s.to_owned()},
+  _ => Response::R403{file:s.to_owned()}}
 }
 
 fn handle_client(stream: TcpStream) {
   let mut reader = BufReader::new(stream);
-  let whatever = determine_response(&mut reader);
-  let stream = reader.into_inner();
-  match whatever {
-    Response::R200{fh} => send200(stream,fh),
-    Response::R400 => send400(stream),
-    Response::R403 => send403(stream),
-    Response::R404 => send404(stream),
+  let response = determine_response(&mut reader);
+  atomic_log_response(&response);
+  handle_response(response, reader.into_inner());
+}
+
+// must not be called concurrently
+fn atomic_log_response(response:&Response) {
+  let mut log_file=OpenOptions::new()
+     .write(true).create(true).append(true)
+     .open("log.txt").unwrap();
+  match response {
+  &Response::R200{ref fh,ref file} => {
+    log_line(&log_file,String::from("200"),&(file.to_owned().into_bytes()));
+  },
+  &Response::R400{ref request} => {
+    log_line(&log_file,String::from("400"),request);
+  }
+  &Response::R403{ref file} => {
+    log_line(&log_file,String::from("403"),&(file.to_owned().into_bytes()));
+  }
+  &Response::R404{ref file} => {
+    log_line(&log_file,String::from("404"),&(file.to_owned().into_bytes()));
+  }
+  }
+}
+
+fn log_line(mut log_file : &File, code:String,content:&Vec<u8>) {
+    log_file.write(&(code.into_bytes()[0..]));
+    log_file.write(&(String::from(" ").into_bytes()[0..]));
+    log_file.write(&(content[0..content.len()]));
+    log_file.write(&(String::from("\n").into_bytes()[0..]));
+}
+
+fn handle_response(response : Response, mut stream : TcpStream) {
+  match response {
+  Response::R200{fh,file} => send200(stream,fh),
+  Response::R400{request} => send400(stream),
+  Response::R403{file} => send403(stream),
+  Response::R404{file} => send404(stream),
   }
 }
 
@@ -93,14 +152,14 @@ fn send200(mut stream: TcpStream, mut fh: File) {
 fn send400(mut stream: TcpStream) {response(&stream,400)}
 fn send403(mut stream: TcpStream) {response(&stream,404)}
 fn send404(mut stream: TcpStream) {response(&stream,404)}
-fn send405(mut stream: TcpStream) {response(&stream,405)}
 
 fn response(mut stream: &TcpStream, code: u16) {
   let s = String::from("whatever").into_bytes();
   stream.write_all(&s[0..s.len()]);
 }
 
-fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
+fn parse_request<R:Read>(reader : &mut BufReader<R>)
+-> std::result::Result<String,Vec<u8>> {
   let mut line = Vec::new();
   let prefix = String::from("GET /").into_bytes();
   let prefix_size = prefix.len();
@@ -111,13 +170,13 @@ fn parse_request<R:Read>(reader : &mut BufReader<R>) -> Option<String> {
         match valid_suffix(&line) {
           Some(suffix_size) => {
             match str::from_utf8(&line[prefix_size..line.len()-suffix_size]) {
-              Ok(s) => Some(s.to_owned()),
-              Err(_) => None
+              Ok(s) => Ok(s.to_owned()),
+              Err(_) => Err(line.to_owned())
             }},
-	  None => None
+	  None => Err(line.to_owned())
         }
-      } else { None }},
-    Err(_) => None
+      } else { Err(line.to_owned()) }},
+    Err(_) => Err(line.to_owned())
   }
 }
 
@@ -170,6 +229,7 @@ mod graph_tests {
   use std::io::{Result,Read,BufReader};
   use super::Response;
   use super::valid_suffix;
+  use std::fs::File;
 
   #[test]
   fn valid_suffix_test() {
@@ -190,24 +250,20 @@ mod graph_tests {
 
   #[test]
   fn parse_request_test() {
-    assert_eq!(super::parse_request(&mut stor("")),None);
-    assert_eq!(super::parse_request(&mut stor("GET HTTP\r\n")),None);
-    assert_eq!(super::parse_request(&mut stor("GET / HTTP/1.0\r\n")),
-               Some("".to_owned()));
-    assert_eq!(super::parse_request(&mut stor("GET / HTTP\r\n")),
-               Some("".to_owned()));
-    assert_eq!(super::parse_request(&mut stor("GET / HTTP/0.9\r\n")),
-               Some("".to_owned()));
-    assert_eq!(super::parse_request(&mut stor("GET / HTTP/123.3542\r\n")),
-               Some("".to_owned()));
+    assert_eq!(super::parse_request(&mut stor("")),Err(stob("")));
+    assert_eq!(super::parse_request(&mut stor("GET HTTP\r\n")),Err(stob("GET HTTP\r\n")));
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/1.0\r\n")),Ok("".to_owned()));
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP\r\n")),Ok("".to_owned()));
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/0.9\r\n")),Ok("".to_owned()));
+    assert_eq!(super::parse_request(&mut stor("GET / HTTP/123.3542\r\n")),Ok("".to_owned()));
     assert_eq!(super::parse_request(&mut stor("GET / HTTP/1233542\r\n")),
-               None);
+               Err(stob("GET / HTTP/1233542\r\n")));
     assert_eq!(super::parse_request(&mut stor("GET / HTTP/xyzpqr\r\n")),
-               None);
+               Err(stob("GET / HTTP/xyzpqr\r\n")));
     assert_eq!(super::parse_request(&mut stor("GET /a/b/c HTTP/1.0\r\n")),
-               Some("a/b/c".to_owned()));
+               Ok("a/b/c".to_owned()));
     assert_eq!(super::parse_request(&mut stor("GET /a/b b/c HTTP/1.0\r\n")),
-               Some("a/b b/c".to_owned()));
+               Ok("a/b b/c".to_owned()));
 
     let prefix="GET /".to_owned().into_bytes();
     let suffix=" HTTP/1.0\r\n".to_owned().into_bytes();
@@ -216,22 +272,26 @@ mod graph_tests {
     blank.append(&mut prefix.to_owned());
     blank.append(&mut suffix.to_owned());
     assert_eq!(super::parse_request(&mut BufReader::new(BytesReader{contents:blank,position:0})),
-               Some("".to_owned()));
+               Ok("".to_owned()));
 
     let mut one_char=Vec::new();
     one_char.append(&mut prefix.to_owned());
     one_char.append(& mut(vec![97]));
     one_char.append(&mut suffix.to_owned());
     assert_eq!(super::parse_request(&mut BufReader::new(BytesReader{contents:one_char,position:0})),
-               Some("a".to_owned()));
+               Ok("a".to_owned()));
 
 
     let mut not_utf8=Vec::new();
     not_utf8.append(&mut prefix.to_owned());
     not_utf8.append(& mut(vec![255,255]));
     not_utf8.append(&mut suffix.to_owned());
+    let mut expected = Vec::new();
+    expected.append(&mut prefix.to_owned());
+    expected.append(& mut(vec![255,255]));
+    expected.append(&mut suffix.to_owned());
     assert_eq!(super::parse_request(&mut BufReader::new(BytesReader{contents:not_utf8,position:0})),
-               None)
+               Err(expected));
 
   }
 
@@ -239,11 +299,27 @@ mod graph_tests {
   // in the `ws` directory
   #[test]
   fn correct_response_test() {
+      let expected_R200 = Response::R200{fh:File::open("x.txt").unwrap(),file:String::new()};
       assert_eq!(super::determine_response(&mut stor("GET /dne HTTP\r\n")),
-                 Response::R404);
+                 Response::R404{file:"dne".to_owned()});
+      assert_eq!(super::determine_response(&mut stor("GET /x.txt HTTP\r\n")),
+                 expected_R200);
+      assert_eq!(super::determine_response(&mut stor("GET /hasindexhtml HTTP\r\n")),
+                 expected_R200);
+      assert_eq!(super::determine_response(&mut stor("GET /hasindexshtml HTTP\r\n")),
+                 expected_R200);
+      assert_eq!(super::determine_response(&mut stor("GET /hasindextxt HTTP\r\n")),
+                 expected_R200);
+      assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful HTTP\r\n")),
+                 Response::R404{file:"hasnothinguseful".to_owned()}); // suboptimal
+      assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful/whatevs HTTP\r\n")),
+                 expected_R200);
+      assert_eq!(super::determine_response(&mut stor("junk")),
+                 Response::R400{request:"junk".to_owned().into_bytes()});
   }
 
    fn stor(s:&'static str) -> BufReader<BytesReader> {BufReader::new(BytesReader::new(s))}
+   fn stob(s:&'static str) -> Vec<u8> {s.to_owned().into_bytes()}
     struct BytesReader {
         contents: Vec<u8>,
         position: usize,
