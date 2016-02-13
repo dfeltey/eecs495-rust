@@ -238,11 +238,13 @@ mod graph_tests {
     assert_eq!(valid_suffix(&String::from("\r\n").into_bytes()),None);
     assert_eq!(valid_suffix(&String::from("HTTP\r\n").into_bytes()),None);
     assert_eq!(valid_suffix(&String::from(" HTTP\r\n").into_bytes()),Some(7));
+    assert_eq!(valid_suffix(&String::from("0123456789 HTTP\r\n").into_bytes()),Some(7));
     assert_eq!(valid_suffix(&String::from(" HxTP\r\n").into_bytes()),None);
     assert_eq!(valid_suffix(&String::from(" THTP\r\n").into_bytes()),None);
     assert_eq!(valid_suffix(&String::from(" HTP\r\n").into_bytes()),None);
     assert_eq!(valid_suffix(&String::from(" HTTP/1.0\r\n").into_bytes()),Some(11));
     assert_eq!(valid_suffix(&String::from(" HTTP/14.99\r\n").into_bytes()),Some(13));
+    assert_eq!(valid_suffix(&String::from(" HTTP/12345.919\r\n").into_bytes()),Some(17));
     assert_eq!(valid_suffix(&String::from(" HTT_/14.99\r\n").into_bytes()),None);
     assert_eq!(valid_suffix(&String::from(" HTTP/13399\r\n").into_bytes()),None);
   }
