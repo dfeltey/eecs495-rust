@@ -3,29 +3,32 @@ use std::thread;
 use std::io::{BufReader,BufRead,Read,Write,ErrorKind};
 use std::fs::{self,File,OpenOptions};
 use std::str;
-use std::result;
 
-// path specified in a GET request has to be
-// well-formed utf-8 bytes
+// the path specified in a GET request has to be
+// well-formed utf-8 bytes or it is treated as a 400
 
 // if a GET request doesn't have the leading / in a path,
 // it gets a 400, not a 404 or 403
 
+// we spawn a thread in response to each request,
+// not just to valid GET requests
+
+// we don't bother to process any lines in the request
+// except the first one (the spec asks us to "skip over"
+// them, which is kind of like not reading them at all)
+
+// we also don't send the content-length header, despite
+// being asked to in the specification.
+
 // copied from docs
 fn main() {
-
-let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-
-for stream in listener.incoming() {
+  let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+  for stream in listener.incoming() {
     match stream {
-        Ok(stream) => {
-            thread::spawn(move|| {
-                handle_client(stream)
-            });
-        }
-        Err(_) => { /* connection failed */ }
+    Ok(stream) => {thread::spawn(move|| {handle_client(stream)});},
+    Err(_) => {}
     }
-}
+  }
 }
 
 #[derive(Debug)]
@@ -39,8 +42,8 @@ enum Response {
 impl PartialEq for Response {
   fn eq(&self, that: &Response) -> bool {
     match self {
-      &Response::R200{ref fh, ref file} =>
-        match *that {Response::R200{ref fh, ref file} => true, _ => false},
+      &Response::R200{fh : _, file:_} =>
+        match *that {Response::R200{fh:_,file:_} => true, _ => false},
       &Response::R400{request: ref request1} =>
         match *that {Response::R400{request: ref request2} => request1==request2, _ => false},
       &Response::R403{file: ref file1} =>
@@ -59,8 +62,8 @@ fn determine_response<R:Read>(mut reader : &mut BufReader<R>) -> Response {
     Ok (md) => 
       if md.is_dir() {
         try_to_open_file(&(s.to_owned() + "/index.html"),
-        |x,_| try_to_open_file(&(s.to_owned() + "/index.shtml"),
-        |x,_| try_to_open_file(&(s.to_owned() + "/index.txt"),
+        |_,_| try_to_open_file(&(s.to_owned() + "/index.shtml"),
+        |_,_| try_to_open_file(&(s.to_owned() + "/index.txt"),
         |x,_| give_up(x,&s))))
       } else if md.is_file() {
         try_to_open_file(&s,give_up)
@@ -97,11 +100,11 @@ fn handle_client(stream: TcpStream) {
 
 // must not be called concurrently
 fn atomic_log_response(response:&Response) {
-  let mut log_file=OpenOptions::new()
+  let log_file=OpenOptions::new()
      .write(true).create(true).append(true)
      .open("log.txt").unwrap();
   match response {
-  &Response::R200{ref fh,ref file} => {
+  &Response::R200{fh:_,ref file} => {
     log_line(&log_file,String::from("200"),&(file.to_owned().into_bytes()));
   },
   &Response::R400{ref request} => {
@@ -117,23 +120,39 @@ fn atomic_log_response(response:&Response) {
 }
 
 fn log_line(mut log_file : &File, code:String,content:&Vec<u8>) {
-    log_file.write(&(code.into_bytes()[0..]));
-    log_file.write(&(String::from(" ").into_bytes()[0..]));
-    log_file.write(&(content[0..content.len()]));
-    log_file.write(&(String::from("\n").into_bytes()[0..]));
+    log_file.write(&(code.into_bytes()[0..])).unwrap();
+    log_file.write(&(String::from(" ").into_bytes()[0..])).unwrap();
+    log_file.write(&(content[0..content.len()])).unwrap();
+    log_file.write(&(String::from("\n").into_bytes()[0..])).unwrap();
 }
 
-fn handle_response(response : Response, mut stream : TcpStream) {
+// we ignore errors on writes here because we expect them to correspond to
+// situations where the client has disconnected (or things of that
+// ilk) and so the bytes will just go nowhere, which we don't care about
+fn handle_response(response : Response, stream : TcpStream) {
   match response {
-  Response::R200{fh,file} => send200(stream,fh),
-  Response::R400{request} => send400(stream),
-  Response::R403{file} => send403(stream),
-  Response::R404{file} => send404(stream),
+  Response::R200{fh,file} => deliver200(stream,fh,is_html(&file)),
+  Response::R400{request:_} => deliver_response(&stream,"400 Bad Request"),
+  Response::R403{file:_} => deliver_response(&stream,"403 Forbidden"),
+  Response::R404{file:_} => deliver_response(&stream,"404 Not Found")
   }
 }
 
-fn send200(mut stream: TcpStream, mut fh: File) {
-  response(&stream, 200);
+fn is_html(x:&String) -> bool {
+  let html_suffix = ".html";
+  if x.len() < html_suffix.len() { return false }
+  return html_suffix[0..] == x[x.len()-html_suffix.len()..x.len()];
+}
+
+fn deliver200(mut stream: TcpStream, mut fh: File, html: bool) {
+  deliver_response(&stream, "200 OK");
+  send_ignore_err(&stream, "muck v0.1\r\n");
+  if html {
+    send_ignore_err(&stream, "text/html\r\n");
+  } else {
+    send_ignore_err(&stream, "text/plain\r\n");
+  }
+  send_ignore_err(&stream, "\r\n");
   let mut buf = vec![0;1024];
   loop {
     match fh.read(&mut buf) {
@@ -149,14 +168,17 @@ fn send200(mut stream: TcpStream, mut fh: File) {
   }
 }
 
-fn send400(mut stream: TcpStream) {response(&stream,400)}
-fn send403(mut stream: TcpStream) {response(&stream,404)}
-fn send404(mut stream: TcpStream) {response(&stream,404)}
-
-fn response(mut stream: &TcpStream, code: u16) {
-  let s = String::from("whatever").into_bytes();
-  stream.write_all(&s[0..s.len()]);
+fn deliver_response(mut stream: &TcpStream, code: &'static str) {
+  send_ignore_err(stream,"HTTP/1.0 ");
+  ignore(stream.write_all(&code.to_owned().into_bytes()));
+  send_ignore_err(stream,"\r\n")
 }
+
+fn send_ignore_err(mut stream: &TcpStream, str : &'static str) {
+  ignore(stream.write_all(&String::from(str).into_bytes()[0..]));
+}
+
+fn ignore<T,E>(r : Result<T,E>) { match r { Ok(_) => {}, Err(_) => {}}}
 
 fn parse_request<R:Read>(reader : &mut BufReader<R>)
 -> std::result::Result<String,Vec<u8>> {
@@ -301,52 +323,51 @@ mod graph_tests {
   // in the `ws` directory
   #[test]
   fn correct_response_test() {
-      let expected_R200 = Response::R200{fh:File::open("x.txt").unwrap(),file:String::new()};
+      let expected_200 = Response::R200{fh:File::open("x.txt").unwrap(),file:String::new()};
       assert_eq!(super::determine_response(&mut stor("GET /dne HTTP\r\n")),
                  Response::R404{file:"dne".to_owned()});
       assert_eq!(super::determine_response(&mut stor("GET /x.txt HTTP\r\n")),
-                 expected_R200);
+                 expected_200);
       assert_eq!(super::determine_response(&mut stor("GET /hasindexhtml HTTP\r\n")),
-                 expected_R200);
+                 expected_200);
       assert_eq!(super::determine_response(&mut stor("GET /hasindexshtml HTTP\r\n")),
-                 expected_R200);
+                 expected_200);
       assert_eq!(super::determine_response(&mut stor("GET /hasindextxt HTTP\r\n")),
-                 expected_R200);
+                 expected_200);
       assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful HTTP\r\n")),
                  Response::R404{file:"hasnothinguseful".to_owned()}); // suboptimal
       assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful/whatevs HTTP\r\n")),
-                 expected_R200);
+                 expected_200);
       assert_eq!(super::determine_response(&mut stor("junk")),
                  Response::R400{request:"junk".to_owned().into_bytes()});
   }
 
    fn stor(s:&'static str) -> BufReader<BytesReader> {BufReader::new(BytesReader::new(s))}
    fn stob(s:&'static str) -> Vec<u8> {s.to_owned().into_bytes()}
-    struct BytesReader {
-        contents: Vec<u8>,
-        position: usize,
-    }
 
-    impl BytesReader {
-        fn new(s: &str) -> Self {
-            BytesReader {
-                contents: s.to_owned().into_bytes(),
-                position: 0,
-            }
-        }
-    }
+   struct BytesReader {
+     contents: Vec<u8>,
+     position: usize,
+   }
 
-    impl Read for BytesReader {
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-            let mut count = 0;
-            
-            while self.position < self.contents.len() && count < buf.len() {
-                buf[count] = self.contents[self.position];
-                count += 1;
-                self.position += 1;
-            }
-            
-            return Ok(count);
-        }
+  impl BytesReader {
+    fn new(s: &str) -> Self {
+      BytesReader {
+        contents: s.to_owned().into_bytes(),
+        position: 0,
+      }
     }
+  }
+
+  impl Read for BytesReader {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+      let mut count = 0;
+      while self.position < self.contents.len() && count < buf.len() {
+        buf[count] = self.contents[self.position];
+        count += 1;
+        self.position += 1;
+      }
+      return Ok(count);
+    }
+  }
 }
