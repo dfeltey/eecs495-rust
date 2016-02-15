@@ -26,14 +26,9 @@ fn main() {
   let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
   let (tx, rx): (SyncSender<Response>,Receiver<Response>) = sync_channel(0);
 
-  // Start a thread to listen for log messages
-  // and then log them to a file
   thread::spawn(move|| {
     loop {
-      match rx.recv() {
-      Ok(response) => atomic_log_response(&response),
-      Err(_) => {}, // we never disconnect the other end of this channel
-      }
+      atomic_log_response(&(rx.recv().unwrap()))
     }
   });
 
