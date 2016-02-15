@@ -26,17 +26,13 @@ fn main() {
   let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
   let (tx, rx): (SyncSender<Response>,Receiver<Response>) = sync_channel(0);
 
-  // Start a thread to listen for log messages and then actually log them
-  // to a file
+  // Start a thread to listen for log messages
+  // and then log them to a file
   thread::spawn(move|| {
     loop {
       match rx.recv() {
-        Ok(response) => {
-          atomic_log_response(&response);
-        },
-        // Should we panic in this case, I think if we get an error here
-        // then nothing will be received on the channel again
-        Err(_) => {}
+      Ok(response) => atomic_log_response(&response),
+      Err(_) => {}, // we never disconnect the other end of this channel
       }
     }
   });
@@ -116,7 +112,6 @@ fn handle_client(stream: TcpStream,chan: SyncSender<Response>) {
   let mut reader = BufReader::new(stream);
   let (response,option_fh) = determine_response(&mut reader);
   chan.send(response.clone()).unwrap();
-  //atomic_log_response(&response);
   handle_response(response,option_fh, reader.into_inner());
 }
 
@@ -149,8 +144,10 @@ fn log_line(mut log_file : &File, code:String,content:&Vec<u8>) {
 // ilk) and so the bytes will just go nowhere, which we don't care about
 fn handle_response(response : Response,fh: Option<File>, stream : TcpStream) {
   match response {
-  // Calling unwrap on fh here should be safe, as R200 can only be
-  // constructed with a valid file
+  // Calling unwrap on fh here is safe, as R200 can only be
+  // constructed with a valid file -- we keep these as parallel
+  // structures so we don't have to send the `fh` across the channel
+  // to the logging thread
   Response::R200{file} => deliver200(stream,fh.unwrap(),is_html(&file)),
   Response::R400{request:_} => deliver_response(&stream,"400 Bad Request"),
   Response::R403{file:_} => deliver_response(&stream,"403 Forbidden"),
@@ -354,7 +351,7 @@ mod graph_tests {
       assert_eq!(super::determine_response(&mut stor("GET /hasindextxt HTTP\r\n")).0,
                  expected_200);
       assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful HTTP\r\n")).0,
-                 Response::R404{file:"hasnothinguseful".to_owned()}); // suboptimal
+                 Response::R404{file:"hasnothinguseful".to_owned()});
       assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful/whatevs HTTP\r\n")).0,
                  expected_200);
       assert_eq!(super::determine_response(&mut stor("junk")).0,
