@@ -26,14 +26,18 @@ fn main() {
   let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
   let (tx, rx): (SyncSender<&Response>,Receiver<&Response>) = sync_channel(0);
 
+  // Start a thread to listen for log messages and then actually log them
+  // to a file
   thread::spawn(move|| {
-    match rx.recv() {
-      Ok(response) => {
-        atomic_log_response(&response);
-      },
-      // Should we panic in this case, I think if we get an error here
-      // then nothing will be received on the channel again
-      Err(_) => {}
+    loop {
+      match rx.recv() {
+        Ok(response) => {
+          atomic_log_response(&response);
+        },
+        // Should we panic in this case, I think if we get an error here
+        // then nothing will be received on the channel again
+        Err(_) => {}
+      }
     }
   });
 
