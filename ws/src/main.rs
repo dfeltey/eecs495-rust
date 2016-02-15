@@ -1,5 +1,6 @@
 use std::net::{TcpListener, TcpStream};
 use std::thread;
+use std::sync::mpsc::{sync_channel,SyncSender,Receiver};
 use std::io::{BufReader,BufRead,Read,Write,ErrorKind};
 use std::fs::{self,File,OpenOptions};
 use std::str;
@@ -23,9 +24,25 @@ use std::str;
 // copied from docs
 fn main() {
   let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+  let (tx, rx): (SyncSender<&Response>,Receiver<&Response>) = sync_channel(0);
+
+  thread::spawn(move|| {
+    match rx.recv() {
+      Ok(response) => {
+        atomic_log_response(&response);
+      },
+      // Should we panic in this case, I think if we get an error here
+      // then nothing will be received on the channel again
+      Err(_) => {}
+    }
+  });
+
   for stream in listener.incoming() {
     match stream {
-    Ok(stream) => {thread::spawn(move|| {handle_client(stream)});},
+    Ok(stream) => {
+      let sender = tx.clone();
+      thread::spawn(move|| {handle_client(stream,sender)});
+    },
     Err(_) => {}
     }
   }
@@ -91,10 +108,11 @@ fn give_up(x:std::io::Error, s: &String) -> Response {
   _ => Response::R403{file:s.to_owned()}}
 }
 
-fn handle_client(stream: TcpStream) {
+fn handle_client(stream: TcpStream,chan: SyncSender<&Response>) {
   let mut reader = BufReader::new(stream);
   let response = determine_response(&mut reader);
-  atomic_log_response(&response);
+  chan.send(&response);
+  //atomic_log_response(&response);
   handle_response(response, reader.into_inner());
 }
 
