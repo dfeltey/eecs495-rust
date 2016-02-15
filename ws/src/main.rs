@@ -24,7 +24,7 @@ use std::str;
 // copied from docs
 fn main() {
   let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-  let (tx, rx): (SyncSender<&Response>,Receiver<&Response>) = sync_channel(0);
+  let (tx, rx): (SyncSender<Response>,Receiver<Response>) = sync_channel(0);
 
   // Start a thread to listen for log messages and then actually log them
   // to a file
@@ -52,9 +52,9 @@ fn main() {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 enum Response {
-  R200{fh: File, file:String},
+  R200{file:String},
   R400{request:Vec<u8>},
   R403{file:String},
   R404{file:String},
@@ -63,8 +63,8 @@ enum Response {
 impl PartialEq for Response {
   fn eq(&self, that: &Response) -> bool {
     match self {
-      &Response::R200{fh : _, file:_} =>
-        match *that {Response::R200{fh:_,file:_} => true, _ => false},
+      &Response::R200{file:_} =>
+        match *that {Response::R200{file:_} => true, _ => false},
       &Response::R400{request: ref request1} =>
         match *that {Response::R400{request: ref request2} => request1==request2, _ => false},
       &Response::R403{file: ref file1} =>
@@ -75,7 +75,7 @@ impl PartialEq for Response {
   }
 }
 
-fn determine_response<R:Read>(mut reader : &mut BufReader<R>) -> Response {
+fn determine_response<R:Read>(mut reader : &mut BufReader<R>) -> (Response,Option<File>) {
   let parsed_request = parse_request(&mut reader);
   match parsed_request {
   Ok(s) => {
@@ -88,36 +88,36 @@ fn determine_response<R:Read>(mut reader : &mut BufReader<R>) -> Response {
         |x,_| give_up(x,&s))))
       } else if md.is_file() {
         try_to_open_file(&s,give_up)
-      } else {Response::R404{file:s.to_owned()}},
+      } else {(Response::R404{file:s.to_owned()},None)},
     Err(x) =>
       match x.kind() {
-      ErrorKind::NotFound => Response::R404{file:s.to_owned()},
-      _ => Response::R403{file:s.to_owned()}
+      ErrorKind::NotFound => (Response::R404{file:s.to_owned()},None),
+      _ => (Response::R403{file:s.to_owned()},None)
       }
     }},
-  Err(s) => Response::R400{request:s}
+  Err(s) => (Response::R400{request:s},None)
 }}
 
-fn try_to_open_file<K>(s : &String, k: K) -> Response
-  where K : Fn(std::io::Error,&String) -> Response {
+fn try_to_open_file<K>(s : &String, k: K) -> (Response,Option<File>)
+  where K : Fn(std::io::Error,&String) -> (Response,Option<File>) {
   match File::open(s) {
-  Ok(fh) => Response::R200{fh:fh,file:s.to_owned()},
+  Ok(fh) => (Response::R200{file:s.to_owned()},Some(fh)),
   Err(x) => k(x,s)
   }
 }
 
-fn give_up(x:std::io::Error, s: &String) -> Response {
+fn give_up(x:std::io::Error, s: &String) -> (Response,Option<File>) {
   match x.kind() {
-  ErrorKind::NotFound => Response::R404{file:s.to_owned()},
-  _ => Response::R403{file:s.to_owned()}}
+  ErrorKind::NotFound => (Response::R404{file:s.to_owned()},None),
+  _ => (Response::R403{file:s.to_owned()},None)}
 }
 
-fn handle_client(stream: TcpStream,chan: SyncSender<&Response>) {
+fn handle_client(stream: TcpStream,chan: SyncSender<Response>) {
   let mut reader = BufReader::new(stream);
-  let response = determine_response(&mut reader);
-  chan.send(&response);
+  let (response,option_fh) = determine_response(&mut reader);
+  chan.send(response.clone()).unwrap();
   //atomic_log_response(&response);
-  handle_response(response, reader.into_inner());
+  handle_response(response,option_fh, reader.into_inner());
 }
 
 // must not be called concurrently
@@ -126,7 +126,7 @@ fn atomic_log_response(response:&Response) {
      .write(true).create(true).append(true)
      .open("log.txt").unwrap();
   match response {
-  &Response::R200{fh:_,ref file} =>
+  &Response::R200{ref file} =>
     log_line(&log_file,String::from("200"),&(file.to_owned().into_bytes())),
   &Response::R400{ref request} =>
     log_line(&log_file,String::from("400"),request),
@@ -147,9 +147,11 @@ fn log_line(mut log_file : &File, code:String,content:&Vec<u8>) {
 // we ignore errors on writes here because we expect them to correspond to
 // situations where the client has disconnected (or things of that
 // ilk) and so the bytes will just go nowhere, which we don't care about
-fn handle_response(response : Response, stream : TcpStream) {
+fn handle_response(response : Response,fh: Option<File>, stream : TcpStream) {
   match response {
-  Response::R200{fh,file} => deliver200(stream,fh,is_html(&file)),
+  // Calling unwrap on fh here should be safe, as R200 can only be
+  // constructed with a valid file
+  Response::R200{file} => deliver200(stream,fh.unwrap(),is_html(&file)),
   Response::R400{request:_} => deliver_response(&stream,"400 Bad Request"),
   Response::R403{file:_} => deliver_response(&stream,"403 Forbidden"),
   Response::R404{file:_} => deliver_response(&stream,"404 Not Found")
@@ -269,7 +271,6 @@ mod graph_tests {
   use std::io::{Result,Read,BufReader};
   use super::Response;
   use super::valid_suffix;
-  use std::fs::File;
 
   #[test]
   fn valid_suffix_test() {
@@ -341,22 +342,22 @@ mod graph_tests {
   // in the `ws` directory
   #[test]
   fn correct_response_test() {
-      let expected_200 = Response::R200{fh:File::open("x.txt").unwrap(),file:String::new()};
-      assert_eq!(super::determine_response(&mut stor("GET /dne HTTP\r\n")),
+      let expected_200 = Response::R200{file:String::new()};
+      assert_eq!(super::determine_response(&mut stor("GET /dne HTTP\r\n")).0,
                  Response::R404{file:"dne".to_owned()});
-      assert_eq!(super::determine_response(&mut stor("GET /x.txt HTTP\r\n")),
+      assert_eq!(super::determine_response(&mut stor("GET /x.txt HTTP\r\n")).0,
                  expected_200);
-      assert_eq!(super::determine_response(&mut stor("GET /hasindexhtml HTTP\r\n")),
+      assert_eq!(super::determine_response(&mut stor("GET /hasindexhtml HTTP\r\n")).0,
                  expected_200);
-      assert_eq!(super::determine_response(&mut stor("GET /hasindexshtml HTTP\r\n")),
+      assert_eq!(super::determine_response(&mut stor("GET /hasindexshtml HTTP\r\n")).0,
                  expected_200);
-      assert_eq!(super::determine_response(&mut stor("GET /hasindextxt HTTP\r\n")),
+      assert_eq!(super::determine_response(&mut stor("GET /hasindextxt HTTP\r\n")).0,
                  expected_200);
-      assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful HTTP\r\n")),
+      assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful HTTP\r\n")).0,
                  Response::R404{file:"hasnothinguseful".to_owned()}); // suboptimal
-      assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful/whatevs HTTP\r\n")),
+      assert_eq!(super::determine_response(&mut stor("GET /hasnothinguseful/whatevs HTTP\r\n")).0,
                  expected_200);
-      assert_eq!(super::determine_response(&mut stor("junk")),
+      assert_eq!(super::determine_response(&mut stor("junk")).0,
                  Response::R400{request:"junk".to_owned().into_bytes()});
   }
 
