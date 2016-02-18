@@ -22,21 +22,18 @@ then try to generate schedules that exhibit bugs in the implementation.
 
 Minimum:
   - an implementation of the language below with support for randomized schedules
-  - an implementation of the barber problem using semaphores below
-  - various broken implementations of barbers and an evaluation of how good
-    random testing is at finding deadlocks and assertion failures
-  - implementations of concurrent data structures such as the list_set seen in class
-    utilizing different locking methods, we should be able to exhibit program
-    traces which reveal bugs in the program
+  - an implementation of the various list-as-set ADTs as described in class
+    (buggy and not) in the language below
+  - a simple way to specify properties of programs that's good enough to
+    capture what's wrong with the buggy code in class
+  - an evaluation of whether or not random testing reveals the bugs from class
 
 Bonus:
   - enumerating schedules
-  - adding test-and-set (or other low-level prim)
-    and implementing semaphores (or other higher-level prims) over it
-  - a way to specify invariants of traces
-    (which the random tester will then use to falsify)
   - a Rust-like {} parser for this language
     (along with syntax highlighting and inentation in DrRacket)
+    --=> this will probably entail some changes to the syntax
+         as below too, but the set of programs will remain about the same
   - a GUI to visualize traces
 
 |#
@@ -52,17 +49,14 @@ Bonus:
 
   ;; definitions
   (d ::=
-     (define (x x ...) s)
+     (define (x x ...) (var x s) ... s)
      (var x s))
 
   ;; statements
   (s ::=
      x            ;; variable reference
-     (var x s)    ;; local variable defintiions
      integer
-     (spawn s)
-     (park s)
-     (unpark s)
+     (par s s)
      (semaphore s)
      (P s)
      (V s)
@@ -70,12 +64,13 @@ Bonus:
      (:= x s)     ;; variable assignment
      (:= (s x) s) ;; field assignment
      (x s ....)   ;; fn call
-     (if0 s s s)
+     (if s s s)
      (while s s)
      (+ s s)
      (- s s)
-     (event x)
-     (assert s)   ;; s produces a 0
+     (< s s)
+     (= s s)
+     true false
      (record (x s) ...)
      (dot s x)
      (print x ...))
