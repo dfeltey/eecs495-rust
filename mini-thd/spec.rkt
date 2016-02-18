@@ -10,15 +10,22 @@ that falsify assertions that the programmer writes. Probably this can compile
 into regular racket with explicitly added syncronization that allows us to
 have fine-grained control over the schedule that the program see.
 
-The language we have in mind is below and we don't know exactly what the
-language for assertions is yet, but we want it to include at least enough
-to specify the correctness property for a semaphore-based implementation of
-mutexes, and possibly other things.
-
 We also plan to investigate other basic concurrency building blocks like
 test-and-set or channels and to drive the design of the language by what
-problems we can ask students to solve using it. For that, some advice
-on concurrent primitives and their implementation would be useful.....
+problems we can ask students to solve using it.
+
+Minimum:
+  - an implementation of the language below with support for randomized schedules
+  - an implementation of the barber problem using semaphores below
+  - various broken implementations of barbers and an evaluation of how good
+    random testing is at finding deadlocks and assertion failures
+
+Bonus:
+  - enumerating schedules
+  - adding test-and-set (or other low-level prim)
+    and implementing semaphores (or other higher-level prims) over it
+  - a way to specify invariants of traces
+    (which the random tester will then use to falsify)
 
 |#
 
@@ -49,11 +56,6 @@ on concurrent primitives and their implementation would be useful.....
      (x s ....) ;; fn call
      (if0 s s s)
      (+ s s)
-     (event x))
+     (event x)
+     (assert s))) ;; s produces a 0
 
-  ;; assertions ... not sure about these.
-  (a ::=
-     x         ;; event happens
-     (or a a)  ;; choice
-     (seq a a) ;; both
-     (* a)))   ;; repeat
