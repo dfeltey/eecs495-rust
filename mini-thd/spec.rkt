@@ -54,12 +54,15 @@ Bonus:
      (P s)
      (V s)
      (seq s ...)
-     (:= x s)
-     (x s ....) ;; fn call
+     (:= x s)     ;; variable assignment
+     (:= (s x) s) ;; field assignment
+     (x s ....)   ;; fn call
      (if0 s s s)
      (+ s s)
      (event x)
-     (assert s))  ;; s produces a 0
+     (assert s)   ;; s produces a 0
+     (record (x s) ...)
+     (dot s x))
 
   (x ::= variable-not-otherwise-mentioned))
 
