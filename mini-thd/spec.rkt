@@ -6,74 +6,70 @@ interleaving threads.
 
 We plan to implement the language below with special support for scheduling,
 namely an exhausive search of all schedules or randomly searching for schedules
-that falsify assertions that the programmer writes. Probably this can compile
-into regular racket with explicitly added syncronization that allows us to
-have fine-grained control over the schedule that the program see.
+that falsify assertions that the programmer writes.
 
-We also plan to investigate other basic concurrency building blocks like
-test-and-set or channels and to drive the design of the language by what
-problems we can ask students to solve using it.
-
-We can use this language to investigate the implementation of concurrent data
-structures. As seen in class, it is easy for subtle bugs to go undetected when
-writing code that manages concurrency explicitly. The support for scheduling in
-the language will allow us to state properties of concurrent data structures and
-then try to generate schedules that exhibit bugs in the implementation.
+The language is a first-order, untyped, parallel functional language
+with integers, booleans, semaphores, and mutable records (of any of those
+or of records) as values.
 
 Minimum:
   - an implementation of the language below with support for randomized schedules
-  - an implementation of the various list-as-set ADTs as described in class
+  - implementations of the list-as-set ADT as described in class
     (buggy and not) in the language below
   - a simple way to specify properties of programs that's good enough to
-    capture what's wrong with the buggy code in class
+    capture what's wrong with the buggy last-as-set ADT implementations from class
   - an evaluation of whether or not random testing reveals the bugs from class
 
 Bonus:
   - enumerating schedules
   - a Rust-like {} parser for this language
-    (along with syntax highlighting and inentation in DrRacket)
-    --=> this will probably entail some changes to the syntax
-         as below too, but the set of programs will remain about the same
-  - a GUI to visualize traces
+    (along with syntax highlighting and indentation in DrRacket)
+  - a GUI to visualize traces, with support to make choices and
+    to "go back" (ie re-run up to the given point) and change
+    the scheduling decisions at each point
 
 |#
 
 #lang racket
 
-
 (require redex)
 (define-language L
 
   ;; programs
-  (p ::= (d ...))
+  (p ::= (d ... s))
+  ;; definitions plus an expression that should
+  ;; always evaluate to true (but might not if there
+  ;; is a bug)
 
   ;; definitions
   (d ::=
-     (define (x x ...) (var x s) ... s)
-     (var x s))
+     (define (x x ...) (var x s) ... s) ;; define a function w/local vars
+     (var x s)) ;; global variable
 
-  ;; statements
+  ;; statement/expressions
   (s ::=
-     x            ;; variable reference
-     integer
-     (par s s)
-     (semaphore s)
-     (P s)
-     (V s)
-     (seq s ...)
-     (:= x s)     ;; variable assignment
-     (:= (s x) s) ;; field assignment
-     (x s ....)   ;; fn call
-     (if s s s)
-     (while s s)
+     (par s s ...) ;; run args in parallel, complete when all do
+     (semaphore s) ;; create a semaphore with initial value (that must be a nat)
+     (inc s)       ;; increment the count in a semaphore
+     (dec s)       ;; decrement it
+     x             ;; variable reference
+     integer       ;; integer constant
+     (seq s s ...) ;; sequential composition
+     (:= x s)      ;; variable assignment
+     (:= (s x) s)  ;; field assignment
+     (x s ....)    ;; fn call
+     (if s s s)    ;; conditional
+     (while s (var s s) ... s) ;; loop
      (+ s s)
      (- s s)
      (< s s)
      (= s s)
-     true false
-     (record (x s) ...)
-     (dot s x)
-     (print x ...))
+     (or s s)        ;; shortcircuiting
+     (and s s)       ;; shortcircuiting
+     true false      ;; boolean constants
+     (rec (x s) ...) ;; construct a record with fields named by 'x's
+     (dot s x)       ;; extract the 'x' field from the record 's'
+     (print x ...))  ;; print the name and value of the given variables
 
   (x ::= variable-not-otherwise-mentioned))
 
