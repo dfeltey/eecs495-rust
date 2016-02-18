@@ -38,7 +38,7 @@ Bonus:
 (define-language L
 
   ;; programs
-  (p ::= (d ... a ...))
+  (p ::= (d ...))
 
   ;; definitions
   (d ::=
@@ -59,5 +59,7 @@ Bonus:
      (if0 s s s)
      (+ s s)
      (event x)
-     (assert s))) ;; s produces a 0
+     (assert s))  ;; s produces a 0
+
+  (x ::= variable-not-otherwise-mentioned))
 
