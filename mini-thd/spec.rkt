@@ -28,6 +28,7 @@ Bonus:
     (which the random tester will then use to falsify)
   - a Rust-like {} parser for this language
     (along with syntax highlighting and inentation in DrRacket)
+  - a GUI to visualize traces
 
 |#
 
@@ -62,7 +63,8 @@ Bonus:
      (event x)
      (assert s)   ;; s produces a 0
      (record (x s) ...)
-     (dot s x))
+     (dot s x)
+     (print x ...))
 
   (x ::= variable-not-otherwise-mentioned))
 
