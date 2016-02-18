@@ -26,6 +26,8 @@ Bonus:
     and implementing semaphores (or other higher-level prims) over it
   - a way to specify invariants of traces
     (which the random tester will then use to falsify)
+  - a Rust-like {} parser for this language
+    (along with syntax highlighting and inentation in DrRacket)
 
 |#
 
