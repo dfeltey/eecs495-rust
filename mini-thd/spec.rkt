@@ -1,5 +1,7 @@
 #|
 
+rfindler, dfeltey@github
+
 The goal is to implement a small language (to be used via #lang in DrRacket)
 that helps students get their heads around the combinatorial nature of
 interleaving threads.
