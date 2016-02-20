@@ -9,10 +9,34 @@
                      [module-begin #%module-begin]
                      [begin seq]))
 
+(define semaphore-index 0)
+(struct sema (count index))
+(define (semaphore n)
+  (unless (exact-nonnegative-integer? n)
+    (raise-argument-error 'semaphore "exact-nonnegative-integer?" n))
+  (set! semaphore-index (+ semaphore-index 1))
+  (sema n semaphore-index)) 
+  
+
 (define-syntax (var stx)
-  (raise-syntax-error 'var
-                      "must be used right inside `define` or at the top-level"
-                      stx))
+  (syntax-parse stx
+    [(_ id:id init:expr)
+     (with-syntax ([(secret-id) (generate-temporaries (list #'id))])
+       #'(begin
+           (define secret-id init)
+           (define-syntax id
+             (make-set!-transformer
+              (λ (stx)
+                (syntax-parse stx #:literals (set!)
+                  [(_ _ new-expr)
+                   #'(let ([nv new-expr])
+                       (maybe-swap-thread)
+                       (set! secret-id nv))]
+                  [x
+                   (identifier? #'x)
+                   #'(begin
+                       (maybe-swap-thread)
+                       secret-id)]))))))]))
 
 (begin-for-syntax
   (define-syntax-class var-decl
@@ -39,11 +63,13 @@
           #,@(for/list ([d-or-v (in-list (syntax->list #'(define-or-var ...)))])
                (syntax-parse d-or-v #:literals (var -define)
                  [(var id:id expr:expr)
-                  #'(define id expr)]
+                  d-or-v]
                  [(-define . whatever)
                   d-or-v]))
           body)
-        (module+ main (run-many-trials main)))]))
+        ;(module+ main (printf "starting\n") (main))
+        
+        (module+ main (time (run-many-trials main))))]))
 
 (define-syntax (true stx) #'#t)
 (define-syntax (false stx) #'#t)
@@ -60,47 +86,84 @@
 
 (define-syntax (par stx)
   (syntax-parse stx
-    [(_ e:expr ...)
+    [(_ e:expr ...+)
      #'(do-par (λ () e) ...)]))
 
-(define (do-par . thunks)
-  (let ([done-sema (make-semaphore)])
-    (define new-semas
-      (for/list ([thunk (in-list thunks)])
-        (define start-sema (make-semaphore 0))
-        (thread
-         (λ ()
-           (semaphore-wait start-sema)
-           (thunk)
-           (channel-put new-waiters '())
-           (semaphore-post done-sema)))
-        start-sema))
-    (channel-put new-waiters new-semas)
-    (for ([thunk (in-list thunks)])
-      (semaphore-wait done-sema))))
+(define (do-par thunk1 . thunks)
+  (define new-semas+thds
+    (for/list ([thunk (in-list thunks)])
+      (define start-sema (make-semaphore 0))
+      (cons (thread
+             (λ ()
+               (semaphore-wait start-sema)
+               (thunk)
+               (channel-put remove-me (void))))
+            start-sema)))
+  (channel-put new-waiters-chan (map cdr new-semas+thds))
+  (define join-sema (make-semaphore))
+  (channel-put join-on (vector (map car new-semas+thds) join-sema))
+  (thunk1)
+  (channel-put remove-me (void))
+  (semaphore-wait join-sema))
 
 (define (maybe-swap-thread)
   (define sema (make-semaphore 0))
-  (channel-put new-waiters (list sema))
+  (channel-put maybe-swap sema)
   (semaphore-wait sema))
 
-(define new-waiters (make-channel))
+(define new-waiters-chan (make-channel))
+(define maybe-swap (make-channel))
+(define join-on (make-channel))
+(define remove-me (make-channel))
 (void
  (thread
   (λ ()
-    (let loop ([waiters '()])
+    (let loop ([waiters '()]
+               [previous-pending-joins '()])
+      (define pending-joins
+        (let loop ([pending-joins previous-pending-joins])
+          (cond
+            [(null? pending-joins) null]
+            [else
+             (define pending-join (car pending-joins))
+             (define new-thds (filter (λ (t) (not (thread-dead? t)))
+                                      (vector-ref pending-join 0)))
+             (cond
+               [(null? new-thds)
+                (semaphore-post (vector-ref pending-join 1))
+                (loop (cdr pending-joins))]
+               [else
+                (cons (vector new-thds (vector-ref pending-join 1))
+                      (loop (cdr pending-joins)))])])))
       (sync
        (wrap-evt
-        new-waiters
-        (λ (semas)
-          (define new-waiters (append semas waiters))
+        remove-me
+        (λ (_)
           (cond
-            [(null? new-waiters)
-             (loop '())]
+            [(null? waiters) (loop waiters pending-joins)]
             [else
-             (define next-one (pick-one new-waiters))
+             (define next-one (pick-one waiters))
              (semaphore-post next-one)
-             (loop (remove next-one new-waiters))]))))))))
+             (loop (remove next-one waiters)
+                   pending-joins)])))
+       (wrap-evt
+        join-on
+        (λ (thds+join-sema)
+          (loop waiters
+                (cons thds+join-sema pending-joins))))
+       (wrap-evt
+        new-waiters-chan
+        (λ (semas)
+          (loop (append semas waiters)
+                pending-joins)))
+       (wrap-evt
+        maybe-swap
+        (λ (sema)
+          (define new-waiters (cons sema waiters))
+          (define next-one (pick-one new-waiters))
+          (semaphore-post next-one)
+          (loop (remove next-one new-waiters)
+                pending-joins))))))))
 
 
 (define (pick-one lst)
@@ -117,12 +180,13 @@
                 (+ (hash-ref current-trials next 0) 1)))
     (define next-summary (summarize next-trials))
     (cond
-      [(and (zero? min) (equal? next-summary current-summary))
+      [(and (<= min 0) (equal? next-summary current-summary))
+       (printf "~a trials\n" (+ 100 (- min)))
        (for ([k (in-list (sort (hash-keys next-summary)
                                string<?
                                #:key ~s))])
          (printf "~a% ~s\n"
-                 (~r (hash-ref current-summary k))
+                 (~r (* 100 (hash-ref current-summary k)))
                  k))]
       [else
        (loop next-trials next-summary (max 0 (- min 1)))])))
