@@ -52,8 +52,8 @@ Bonus:
   (s ::=
      (par s s ...) ;; run args in parallel, complete when all do
      (semaphore s) ;; create a semaphore with initial value (that must be a nat)
-     (inc s)       ;; increment the count in a semaphore
-     (dec s)       ;; decrement it
+     (post s)      ;; increment the count in a semaphore
+     (wait s)      ;; decrement it
      x             ;; variable reference
      integer       ;; integer constant
      (seq s s ...) ;; sequential composition
