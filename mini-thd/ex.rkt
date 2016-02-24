@@ -1,8 +1,8 @@
 #lang s-exp "lang.rkt"
 
-(var y 1)
+(var y 0)
 
-(seq (par (:= y 2)
-          (:= y 3))
+(seq (par (:= y (+ y 1))
+          (:= y (+ y 1)))
      y)
 

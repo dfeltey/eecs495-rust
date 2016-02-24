@@ -61,7 +61,7 @@ Bonus:
      (:= (s x) s)  ;; field assignment
      (x s ....)    ;; fn call
      (if s s s)    ;; conditional
-     (while s (var s s) ... s) ;; loop
+     (while s (var x s) ... s) ;; loop
      (+ s s)
      (- s s)
      (< s s)
