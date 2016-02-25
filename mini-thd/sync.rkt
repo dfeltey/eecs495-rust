@@ -47,7 +47,7 @@
              (sync
               
               (if active-thread
-                  (wrap-evt
+                  (handle-evt
                    active-thread
                    (λ (_) (loop (hash-set state 'active-thread #f))))
                   never-evt)
@@ -59,7 +59,7 @@
                        (define thds (vector-ref join 1))
                        (apply choice-evt
                               (for/list ([thd (in-list thds)])
-                                (wrap-evt
+                                (handle-evt
                                  (thread-dead-evt thd)
                                  (λ (_)
                                    (cond
@@ -78,11 +78,11 @@
               
               (apply choice-evt
                      (for/list ([par (in-list started-pars)])
-                       (wrap-evt
+                       (handle-evt
                         (thread-dead-evt par)
                         (λ (_) (loop (hash-set state 'started-pars (remove par started-pars)))))))
               
-              (wrap-evt
+              (handle-evt
                maybe-swap-chan
                (λ (thd+sema+srcloc)
                  (match-define (vector thd sema source line column) thd+sema+srcloc)
@@ -92,12 +92,12 @@
                                   'waiters (cons thd+sema+srcloc waiters)
                                   'started-pars (remove thd started-pars)))))
               
-              (wrap-evt
+              (handle-evt
                started-pars-chan
                (λ (new-thds)
                  (loop (hash-set state 'started-pars (append new-thds started-pars)))))
               
-              (wrap-evt
+              (handle-evt
                join-on-chan
                (λ (info+thds)
                  (define joining-thd (vector-ref (vector-ref info+thds 0) 0))
