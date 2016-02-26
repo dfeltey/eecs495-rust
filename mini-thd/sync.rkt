@@ -17,7 +17,7 @@
                     (hash ;; (or/c #f thread?)
                      'active-thread main-thd
                      
-                     ;; (listof (vector/c thread? sema <srcloc info>))
+                     ;; (listof (vector/c thread? (listof nat) sema <srcloc info>))
                      'waiters '()
                      
                      ;; listof thd
@@ -36,13 +36,14 @@
                   (not (null? waiters)))
              ;; nothing is running and we have no pending par that is starting work, so
              ;; start someone and loop; don't wait for things.
-             (define thd+sema+srcloc (pick-one waiters))
-             (match-define (vector thd sema source line column) thd+sema+srcloc)
+             (define thd+identification+sema+srcloc (pick-one waiters))
+             (match-define (vector thd identification sema source line column)
+               thd+identification+sema+srcloc)
              ;(printf "~a:~a:~a resuming ~a\n" source line column (eq-hash-code sema))
              (semaphore-post sema)
              (loop (hash-set* state
                               'active-thread thd
-                              'waiters (remove thd+sema+srcloc waiters)))]
+                              'waiters (remove thd+identification+sema+srcloc waiters)))]
             [else
              (sync
               
@@ -84,12 +85,13 @@
               
               (handle-evt
                maybe-swap-chan
-               (λ (thd+sema+srcloc)
-                 (match-define (vector thd sema source line column) thd+sema+srcloc)
+               (λ (thd+identification+sema+srcloc)
+                 (match-define (vector thd identification sema source line column)
+                   thd+identification+sema+srcloc)
                  ;(printf "~a:~a:~a blocking ~a\n" source line column (eq-hash-code sema))
                  (loop (hash-set* state
                                   'active-thread (if (eq? thd active-thread) #f active-thread)
-                                  'waiters (cons thd+sema+srcloc waiters)
+                                  'waiters (cons thd+identification+sema+srcloc waiters)
                                   'started-pars (remove thd started-pars)))))
               
               (handle-evt
@@ -105,26 +107,36 @@
                                   'active-thread (if (eq? joining-thd active-thread) #f active-thread)
                                   'joins (cons info+thds joins))))))]))))))
 
+  (define identification-param (make-parameter '()))
+
   (define (par/proc source line column thunk1 . thunks)
     (define new-thds+semas
-      (for/list ([thunk (in-list thunks)])
+      (for/list ([thunk (in-list thunks)]
+                 [i (in-naturals 1)])
         (define sema (make-semaphore))
-        (cons (thread (λ () (semaphore-wait sema) (thunk)))
+        (cons (parameterize ([identification-param (cons 1 (identification-param))])
+                (thread (λ () (semaphore-wait sema) (thunk))))
               sema)))
     (define new-thds (map car new-thds+semas))
     (channel-put started-pars-chan new-thds)
     (for ([thd+sema (in-list new-thds+semas)])
       (semaphore-post (cdr thd+sema)))
-    (thunk1)
+    (parameterize ([identification-param (cons 0 (identification-param))])
+      (thunk1))
     (define join-sema (make-semaphore))
     (channel-put join-on-chan
-                 (vector (vector (current-thread) join-sema source line column)
+                 (vector (vector (current-thread)
+                                 ;; waiting on the 'par' join counts as 'outside' the para
+                                 (identification-param)
+                                 join-sema source line column)
                          new-thds))
     (semaphore-wait join-sema))
 
   (define (maybe-swap-thread/proc source line column)
     (define sema (make-semaphore 0))
-    (channel-put maybe-swap-chan (vector (current-thread) sema source line column))
+    (channel-put maybe-swap-chan (vector (current-thread)
+                                         (identification-param)
+                                         sema source line column))
     (semaphore-wait sema))
   
   (values par/proc
@@ -143,8 +155,32 @@
 
 (module+ test
   (require rackunit)
-  (define-values (par/proc maybe-swap-thread/proc) (start-server car))
-  (for ([x (in-range 10000)])
+  (define (pick-smallest thds)
+    (car (sort thds lon<
+               #:key (λ (x) (vector-ref x 1)))))
+  (define (lon< lon1-orig lon2-orig)
+    (let loop ([lon1 (reverse lon1-orig)]
+               [lon2 (reverse lon2-orig)])
+      (cond
+        [(and (null? lon2) (null? lon1))
+         (error 'lon-compare "found two equal lons! ~s" lon1-orig)]
+        [(null? lon1) #t]
+        [(null? lon2) #f]
+        [else
+         (define n1 (car lon1))
+         (define n2 (car lon2))
+         (cond
+           [(= n1 n2) (loop (cdr lon1) (cdr lon2))]
+           [else (< n1 n2)])])))
+
+  (check-true  (lon< '(0) '(1)))
+  (check-false (lon< '(1) '(0)))
+  (check-false (lon< '(0 1) '(0)))
+  (check-true  (lon< '(0) '(0 1)))
+  (check-true  (lon< '() '(0)))
+         
+  (define-values (par/proc maybe-swap-thread/proc) (start-server pick-smallest))
+  (for ([x (in-range 1000)])
     (check-equal?
      (let ([x 0])
        (par/proc
@@ -152,5 +188,5 @@
         (λ () (maybe-swap-thread/proc #f #f #f) (set! x 1))
         (λ () (maybe-swap-thread/proc #f #f #f) (set! x 2)))
        x)
-     1)))
+     2)))
 
