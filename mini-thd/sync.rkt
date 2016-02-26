@@ -2,7 +2,8 @@
 (require racket/match
          (for-syntax syntax/parse
                      racket/base))
-(provide start-server)
+(provide start-server
+         sort-thds)
 
 (define (start-server pick-one)
   (define join-on-chan (make-channel))
@@ -153,26 +154,30 @@
     [else (cons (car lst) (replace-ith (cdr lst) (- i 1) new-ele))]))
 
 
+(define (sort-thds thds)
+  (sort thds lon<
+        #:key (λ (x) (vector-ref x 1))))
+(define (lon< lon1-orig lon2-orig)
+  (let loop ([lon1 (reverse lon1-orig)]
+             [lon2 (reverse lon2-orig)])
+    (cond
+      [(and (null? lon2) (null? lon1))
+       (error 'lon-compare "found two equal lons! ~s" lon1-orig)]
+      [(null? lon1) #t]
+      [(null? lon2) #f]
+      [else
+       (define n1 (car lon1))
+       (define n2 (car lon2))
+       (cond
+         [(= n1 n2) (loop (cdr lon1) (cdr lon2))]
+         [else (< n1 n2)])])))
+
 (module+ test
   (require rackunit)
-  (define (pick-smallest thds)
-    (car (sort thds lon<
-               #:key (λ (x) (vector-ref x 1)))))
-  (define (lon< lon1-orig lon2-orig)
-    (let loop ([lon1 (reverse lon1-orig)]
-               [lon2 (reverse lon2-orig)])
-      (cond
-        [(and (null? lon2) (null? lon1))
-         (error 'lon-compare "found two equal lons! ~s" lon1-orig)]
-        [(null? lon1) #t]
-        [(null? lon2) #f]
-        [else
-         (define n1 (car lon1))
-         (define n2 (car lon2))
-         (cond
-           [(= n1 n2) (loop (cdr lon1) (cdr lon2))]
-           [else (< n1 n2)])])))
 
+  (define (pick-smallest thds)
+    (car (sort-thds thds)))
+    
   (check-true  (lon< '(0) '(1)))
   (check-false (lon< '(1) '(0)))
   (check-false (lon< '(0 1) '(0)))

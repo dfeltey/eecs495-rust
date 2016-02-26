@@ -14,7 +14,10 @@
                      [begin seq]))
 
 (define-values (par/proc maybe-swap-thread/proc)
-  (start-server (λ (lst) (list-ref lst (random (length lst))))))
+  (start-server
+   (λ (lst)
+     (list-ref (sort-thds lst)
+               (random (length lst))))))
 
 (define-syntax (maybe-swap-thread stx)
   #`(maybe-swap-thread/proc '#,(syntax-source stx)
@@ -80,8 +83,6 @@
           body)
         ;(module+ main (printf "starting\n") (main))
         (module+ main (time (run-many-trials main))))]))
-
-
 
 (define-syntax (true stx) #'#t)
 (define-syntax (false stx) #'#t)
