@@ -58,7 +58,7 @@ Bonus:
      integer       ;; integer constant
      (seq s s ...) ;; sequential composition
      (:= x s)      ;; variable assignment
-     (:= (s x) s)  ;; field assignment
+     (:= (dot s x) s)  ;; field assignment
      (x s ....)    ;; fn call
      (if s s s)    ;; conditional
      (while s (var x s) ... s) ;; loop

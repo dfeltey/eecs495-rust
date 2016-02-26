@@ -26,3 +26,27 @@
             (:= y (+ y 1)))
        y))
 (check-equal? (run-mod 'par1) 2)
+
+(module struct1 "lang.rkt"
+  (dot (rec (x 1) (y 2)) y))
+(check-equal? (run-mod 'struct1) 2)
+
+(module struct2 "lang.rkt"
+  (var z (rec (x 1) (y 2)))
+  (seq (:= (dot z x) 3)
+       (dot z x)))
+(check-equal? (run-mod 'struct2) 3)
+
+(module struct3 "lang.rkt" #:left-to-right
+  (var z (rec (x 1) (y 2)))
+  (seq (par (:= (dot z x) 3)
+            (:= (dot z x) 4))
+       (dot z x)))
+(check-equal? (run-mod 'struct3) 4)
+
+(module struct4 "lang.rkt" #:left-to-right
+  (var z (rec (x 1) (y 2)))
+  (seq (par (:= (dot z x) 4)
+            (:= (dot z x) 3))
+       (dot z x)))
+(check-equal? (run-mod 'struct4) 3)

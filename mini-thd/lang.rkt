@@ -8,6 +8,7 @@
          "sync.rkt")
 
 (provide true false var
+         dot rec
          #%app := par +
          (rename-out [-define define]
                      [datum #%datum]
@@ -114,9 +115,25 @@
      #'(#%datum . d)]))
 
 (define-syntax (:= stx)
-  (syntax-parse stx
+  (syntax-parse stx #:literals (dot)
     [(_ id:id expr:expr)
-     (syntax/loc stx (set! id expr))]))
+     (syntax/loc stx (set! id expr))]
+    [(_ (dot s-expr:expr id:id) v-expr:expr)
+     (syntax/loc stx
+       (begin
+         (let ([s s-expr]
+               [v v-expr])
+           (maybe-swap-thread #,stx)
+           (hash-set! s 'id v))))]))
+
+(define-syntax (rec stx)
+  (syntax-parse stx
+    [(_ (id:id expr:expr) ...)
+     #'(make-hash (list (cons 'id expr) ...))]))
+(define-syntax (dot stx)
+  (syntax-parse stx
+    [(_ expr:expr id:id)
+     #'(hash-ref expr 'id)]))
 
 (define (run-many-trials thunk)
   (let loop ([current-trials (hash)]
