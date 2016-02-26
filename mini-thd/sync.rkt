@@ -180,13 +180,33 @@
   (check-true  (lon< '() '(0)))
          
   (define-values (par/proc maybe-swap-thread/proc) (start-server pick-smallest))
+  (define (mst) (maybe-swap-thread/proc #f #f #f))
   (for ([x (in-range 1000)])
     (check-equal?
      (let ([x 0])
        (par/proc
         #f #f #f
-        (λ () (maybe-swap-thread/proc #f #f #f) (set! x 1))
-        (λ () (maybe-swap-thread/proc #f #f #f) (set! x 2)))
+        (λ () (mst) (set! x 1))
+        (λ () (mst) (set! x 2)))
        x)
-     2)))
+     2))
+
+  (check-equal?
+   (let ([x 0])
+     (par/proc
+      #f #f #f
+      (λ () (mst) (set! x 2))
+      (λ () (mst) (set! x 1)))
+     x)
+   1)
+  
+  (check-equal?
+   (let ([x '()])
+     (par/proc
+      #f #f #f
+      (λ () (mst) (let ([y (cons 1 x)]) (mst) (set! x y)))
+      (λ () (mst) (let ([y (cons 2 x)]) (mst) (set! x y))))
+     x)
+   '(2 1))
+  )
 
