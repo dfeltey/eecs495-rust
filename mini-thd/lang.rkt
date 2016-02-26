@@ -4,6 +4,7 @@
          racket/format
          racket/match
          racket/pretty
+         racket/stxparam
          "sync.rkt")
 
 (provide true false var
@@ -13,16 +14,16 @@
                      [module-begin #%module-begin]
                      [begin seq]))
 
-(define-values (par/proc maybe-swap-thread/proc)
-  (start-server
-   (λ (lst)
-     (list-ref (sort-thds lst)
-               (random (length lst))))))
+(define-syntax-parameter the-par/proc #f)
+(define-syntax-parameter the-maybe-swap-thread/proc #f)
 
 (define-syntax (maybe-swap-thread stx)
-  #`(maybe-swap-thread/proc '#,(syntax-source stx)
-                            #,(syntax-line stx)
-                            #,(syntax-column stx)))
+  (define maybe-swap-thread/proc (syntax-parameter-value #'the-maybe-swap-thread/proc))
+  (unless maybe-swap-thread/proc
+    (raise-syntax-error #f "server not set up"))
+  #`(#,maybe-swap-thread/proc '#,(syntax-source stx)
+                              #,(syntax-line stx)
+                              #,(syntax-column stx)))
 
 (define-syntax (var stx)
   (syntax-parse stx
@@ -47,7 +48,9 @@
 (define-syntax (par stx)
   (syntax-parse stx
     [(_ e:expr ...+)
-     #`(par/proc '#,(syntax-source stx)
+     (define par/proc (syntax-parameter-value #'the-par/proc))
+     (unless par/proc (raise-syntax-error #f "server not set up"))
+     #`(#,par/proc '#,(syntax-source stx)
                  #,(syntax-line stx)
                  #,(syntax-column stx)
                  (λ () e) ...)]))
@@ -61,26 +64,44 @@
     (pattern (f-id:id x-id:id ...+)))
   (define-syntax-class define-or-var
     #:description "define header"
-    (pattern (f-id:id x-id:id ...+))))
+    (pattern (f-id:id x-id:id ...+)))
+  (define-splicing-syntax-class maybe-left-to-right
+    (pattern (~seq #:left-to-right)
+             #:with left-to-right? #t)
+    (pattern (~seq)
+             #:with left-to-right? #f)))
 
 (define-syntax (-define stx)
   (syntax-parse stx
     [(_ h:define-header var-decls:var-decl ... body)
      #'(define h (define var-decls.id var-decls.rhs) ... body)]))
 
+(define (pick-thd-randomly thds)
+  (list-ref (sort-thds thds)
+            (random (length thds))))
+(define (pick-first-thd thds)
+  (car (sort-thds thds)))
+
 (define-syntax (module-begin stx)
   (syntax-parse stx
-    [(_ define-or-var ... body)
+    [(_ lr:maybe-left-to-right define-or-var ... body)
      #`(#%module-begin
         (provide main)
+        (define-values (par/proc maybe-swap-thread/proc)
+          (start-server #,(if (syntax-e (attribute lr.left-to-right?))
+                              #'pick-first-thd
+                              #'pick-thd-randomly)))
+        
         (define (main)
-          #,@(for/list ([d-or-v (in-list (syntax->list #'(define-or-var ...)))])
-               (syntax-parse d-or-v #:literals (var -define)
-                 [(var id:id expr:expr)
-                  d-or-v]
-                 [(-define . whatever)
-                  d-or-v]))
-          body)
+          (syntax-parameterize ([the-par/proc #'par/proc]
+                                [the-maybe-swap-thread/proc #'maybe-swap-thread/proc])
+                               #,@(for/list ([d-or-v (in-list (syntax->list #'(define-or-var ...)))])
+                                    (syntax-parse d-or-v #:literals (var -define)
+                                      [(var id:id expr:expr)
+                                       d-or-v]
+                                      [(-define . whatever)
+                                       d-or-v]))
+                               body))
         ;(module+ main (printf "starting\n") (main))
         (module+ main (time (run-many-trials main))))]))
 
