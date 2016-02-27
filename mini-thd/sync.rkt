@@ -1,9 +1,27 @@
 #lang racket/base
 (require racket/match
+         racket/contract
          (for-syntax syntax/parse
                      racket/base))
-(provide start-server
-         sort-thds)
+(provide
+ (contract-out
+  [start-server (-> any/c (values (-> any/c
+                                      (or/c #f exact-nonnegative-integer?)
+                                      (or/c #f exact-nonnegative-integer?)
+                                      (-> any)
+                                      (-> any) ...
+                                      void?)
+                                  (-> any/c
+                                      (or/c #f exact-nonnegative-integer?)
+                                      (or/c #f exact-nonnegative-integer?)
+                                      void?)))]
+  [sort-thds (-> (listof waitor?) (listof waitor?))]))
+
+;; thread : thread?
+;; id : (listof nat)
+;; semaphore : semaphore? -- hit is to wake the thread
+;; srcloc info: where in the original program something caused a wait
+(struct waitor (thread id semaphore file line column) #:transparent)
 
 (define (start-server pick-one)
   (define join-on-chan (make-channel))
@@ -18,8 +36,8 @@
                     (hash ;; (or/c #f thread?)
                      'active-thread main-thd
                      
-                     ;; (listof (vector/c thread? (listof nat) semaphore? <srcloc info>))
-                     'waiters '()
+                     ;; (listof waitor?)
+                     'waitors '()
                      
                      ;; listof thd
                      'started-pars '()
@@ -28,24 +46,23 @@
                      'joins '())])
                    
           (match-define (hash-table ('active-thread active-thread)
-                                    ('waiters waiters)
+                                    ('waitors waitors)
                                     ('started-pars started-pars)
                                     ('joins joins)) state)
           ;(pretty-write state)
           (cond
             [(and (not active-thread)
                   (null? started-pars)
-                  (not (null? waiters)))
+                  (not (null? waitors)))
              ;; nothing is running and we have no pending par that is starting work, so
              ;; start someone and loop; don't wait for things.
-             (define thd+identification+semaphore+srcloc (pick-one waiters))
-             (match-define (vector thd identification semaphore source line column)
-               thd+identification+semaphore+srcloc)
+             (define a-waitor (pick-one waitors))
+             (match-define (waitor thd identification semaphore source line column) a-waitor)
              ;(printf "~a:~a:~a resuming ~a\n" source line column (eq-hash-code sema))
              (semaphore-post semaphore)
              (loop (hash-set* state
                               'active-thread thd
-                              'waiters (remove thd+identification+semaphore+srcloc waiters)))]
+                              'waitors (remove a-waitor waitors)))]
             [else
              (sync
               
@@ -58,7 +75,7 @@
               (apply choice-evt
                      (for/list ([join (in-list joins)]
                                 [i (in-naturals)])
-                       (define waiter (vector-ref join 0))
+                       (define a-waitor (vector-ref join 0))
                        (define thds (vector-ref join 1))
                        (apply choice-evt
                               (for/list ([thd (in-list thds)])
@@ -69,7 +86,7 @@
                                      [(null? (cdr thds))
                                       (loop
                                        (hash-set* state
-                                                  'waiters (cons waiter waiters)
+                                                  'waitors (cons a-waitor waitors)
                                                   'joins (remove-ith joins i)))]
                                      [else
                                       (loop (hash-set* state
@@ -77,7 +94,7 @@
                                                        (replace-ith
                                                         joins
                                                         i
-                                                        (vector waiter (remove thd thds)))))])))))))
+                                                        (vector waitor (remove thd thds)))))])))))))
               
               (apply choice-evt
                      (for/list ([par (in-list started-pars)])
@@ -87,13 +104,12 @@
               
               (handle-evt
                maybe-swap-chan
-               (λ (thd+identification+semaphore+srcloc)
-                 (match-define (vector thd identification semaphore source line column)
-                   thd+identification+semaphore+srcloc)
+               (λ (a-waitor)
+                 (match-define (waitor thd identification semaphore source line column) a-waitor)
                  ;(printf "~a:~a:~a blocking ~a\n" source line column (eq-hash-code semaphore))
                  (loop (hash-set* state
                                   'active-thread (if (eq? thd active-thread) #f active-thread)
-                                  'waiters (cons thd+identification+semaphore+srcloc waiters)
+                                  'waitors (cons a-waitor waitors)
                                   'started-pars (remove thd started-pars)))))
               
               (handle-evt
@@ -104,7 +120,7 @@
               (handle-evt
                join-on-chan
                (λ (info+thds)
-                 (define joining-thd (vector-ref (vector-ref info+thds 0) 0))
+                 (define joining-thd (waitor-thread (vector-ref info+thds 0)))
                  (loop (hash-set* state
                                   'active-thread (if (eq? joining-thd active-thread) #f active-thread)
                                   'joins (cons info+thds joins))))))]))))))
@@ -127,7 +143,7 @@
       (thunk1))
     (define join-semaphore (make-semaphore))
     (channel-put join-on-chan
-                 (vector (vector (current-thread)
+                 (vector (waitor (current-thread)
                                  ;; waiting on the 'par' join counts as 'outside' the para
                                  (identification-param)
                                  join-semaphore source line column)
@@ -136,7 +152,7 @@
 
   (define (maybe-swap-thread/proc source line column)
     (define semaphore (make-semaphore 0))
-    (channel-put maybe-swap-chan (vector (current-thread)
+    (channel-put maybe-swap-chan (waitor (current-thread)
                                          (identification-param)
                                          semaphore source line column))
     (semaphore-wait semaphore))
@@ -156,8 +172,7 @@
 
 
 (define (sort-thds thds)
-  (sort thds lon<
-        #:key (λ (x) (vector-ref x 1))))
+  (sort thds lon< #:key waitor-id))
 (define (lon< lon1-orig lon2-orig)
   (let loop ([lon1 (reverse lon1-orig)]
              [lon2 (reverse lon2-orig)])
