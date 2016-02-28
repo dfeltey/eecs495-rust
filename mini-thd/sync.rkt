@@ -168,6 +168,7 @@
                   (vector-ref sema+waitor 1))
                 (loop (hash-set* state
                                  'active-thread (if (eq? thd active-thread) #f active-thread)
+                                 'started-pars (remove thd started-pars)
                                  'sema-waitors (cons sema+waitor sema+waitors))))))])))))
 
   (define sema%
@@ -210,7 +211,7 @@
       (for/list ([thunk (in-list thunks)]
                  [i (in-naturals 1)])
         (define semaphore (make-semaphore))
-        (cons (parameterize ([identification-param (cons 1 (identification-param))])
+        (cons (parameterize ([identification-param (cons i (identification-param))])
                 (thread (λ () (semaphore-wait semaphore) (thunk))))
               semaphore)))
     (define new-thds (map car new-thds+semaphores))
@@ -300,6 +301,18 @@
       (λ () (mst) (set! x 1)))
      x)
    1)
+
+  (check-equal?
+   (let ([x 0])
+     (par/proc
+      (here)
+      (λ () (mst) (set! x 5))
+      (λ () (mst) (set! x 4))
+      (λ () (mst) (set! x 3))
+      (λ () (mst) (set! x 2))
+      (λ () (mst) (set! x 1)))
+     x)
+   1)
   
   (check-equal?
    (let ([x '()])
@@ -342,14 +355,15 @@
 
   (check-equal?
    (let ([x '()]
-         [s (new sema% [count 1] [src (here)])])
+         [s (new sema% [count 0] [src (here)])])
      (par/proc
       (here)
       (λ () (send s wait (here)) (set! x (cons 1 x)) (send s post))
       (λ () (send s wait (here)) (set! x (cons 2 x)) (send s post))
       (λ () (send s wait (here)) (set! x (cons 3 x)) (send s post))
-      (λ () (send s wait (here)) (set! x (cons 4 x)) (send s post)))
+      (λ () (set! x (cons 4 x)) (send s post)))
      x)
    '(4 3 2 1))
+
   )
 
