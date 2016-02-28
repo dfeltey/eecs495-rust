@@ -37,7 +37,7 @@
 (define (wait/proc sema srcloc)
   (unless (and (object? sema) (is-a? sema sema<%>))
     (raise-argument-error 'wait "sema" sema))
-  (send sema wait))
+  (send sema wait srcloc))
 
 (define-syntax (maybe-swap-thread stx)
   (define maybe-swap-thread/proc (syntax-parameter-value #'the-maybe-swap-thread/proc))

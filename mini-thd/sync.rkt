@@ -157,8 +157,13 @@
                    (define picked-waitor
                      (pick-a-sema-waitor
                       (map (λ (x) (vector-ref x 1)) these-sema+waitors)))
+                   (define picked-sema-waitor
+                     (for/or ([ele (in-list these-sema+waitors)])
+                       (and (equal? picked-waitor (vector-ref ele 1))
+                            ele)))
+                   (unless picked-sema-waitor (error 'ack))
                    (loop (hash-set* state
-                                    'sema-waitors (remove picked-waitor waitors)
+                                    'sema-waitors (remove picked-sema-waitor sema+waitors)
                                     'waitors (cons picked-waitor waitors)))])))
              
              (handle-evt
@@ -297,6 +302,15 @@
    (let ([x 0])
      (par/proc
       (here)
+      (λ () 1)
+      (λ () 2))
+     x)
+   0)
+
+  (check-equal?
+   (let ([x 0])
+     (par/proc
+      (here)
       (λ () (mst) (set! x 2))
       (λ () (mst) (set! x 1)))
      x)
@@ -358,10 +372,10 @@
          [s (new sema% [count 0] [src (here)])])
      (par/proc
       (here)
-      (λ () (send s wait (here)) (set! x (cons 1 x)) (send s post))
       (λ () (send s wait (here)) (set! x (cons 2 x)) (send s post))
       (λ () (send s wait (here)) (set! x (cons 3 x)) (send s post))
-      (λ () (set! x (cons 4 x)) (send s post)))
+      (λ () (send s wait (here)) (set! x (cons 4 x)) (send s post))
+      (λ () (set! x (cons 1 x)) (send s post)))
      x)
    '(4 3 2 1))
 
