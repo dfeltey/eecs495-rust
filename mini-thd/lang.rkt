@@ -3,8 +3,6 @@
                      racket/base)
          racket/format
          racket/class
-         racket/match
-         racket/pretty
          racket/stxparam
          "sync.rkt")
 
@@ -31,7 +29,12 @@
   (unless (and (object? sema) (is-a? sema sema<%>))
     (raise-argument-error 'post "sema" sema))
   (send sema post))
-(define (wait sema)
+(define-syntax (wait stx)
+  (syntax-parse stx
+    [(_ sema)
+     #`(wait/proc sema #,(syntax/loc stx (here)))]))
+    
+(define (wait/proc sema srcloc)
   (unless (and (object? sema) (is-a? sema sema<%>))
     (raise-argument-error 'wait "sema" sema))
   (send sema wait))
