@@ -70,3 +70,60 @@
                  (post s)))
        x))
 (check-equal? (run-mod 'sema2) 2)
+
+(module if1 "lang.rkt"
+  (if true 1 2))
+(check-equal? (run-mod 'if1) 1)
+(module if2 "lang.rkt"
+  (if (if (< 2 1) true false) 1 2))
+(check-equal? (run-mod 'if2) 2)
+
+(module while "lang.rkt"
+  (var x 1)
+  (var l 10)
+  (seq (while (l . > . 0)
+              (seq (:= x (* x l))
+                   (:= l (+ l -1))))
+       x))
+(check-equal? (run-mod 'while) (* 10 9 8 7 6 5 4 3 2))
+
+(module or "lang.rkt"
+  (rec (a (or false true))
+    (b (or true true))
+    (c (or false false))
+    (d (or true (* true false)))))
+(check-equal? (run-mod 'or)
+              (make-hash (list (cons 'a #t)
+                               (cons 'b #t)
+                               (cons 'c #f)
+                               (cons 'd #t))))
+
+(module and "lang.rkt"
+  (rec (a (and true false))
+    (b (and true true))
+    (c (and false false))
+    (d (and false (* true false)))))
+(check-equal? (run-mod 'and)
+              (make-hash (list (cons 'a #f)
+                               (cons 'b #t)
+                               (cons 'c #f)
+                               (cons 'd #f))))
+
+(module print1 "lang.rkt"
+  (var x 0)
+  (print x))
+(define (run-mod/output name)
+  (define sp (open-output-string))
+  (parameterize ([current-output-port sp])
+    (run-mod name))
+  (get-output-string sp))
+(check-equal? (run-mod/output 'print1)
+              "x 0\n")
+
+(module print2 "lang.rkt"
+  (var x 0)
+  (var y 1)
+  (var z 2)
+  (print x y z))
+(check-equal? (run-mod/output 'print2)
+              "x 0 y 1 z 2\n")

@@ -6,9 +6,9 @@
          racket/stxparam
          "sync.rkt")
 
-(provide true false var
-         dot rec sema wait post
-         #%app := par +
+(provide true false var while
+         dot rec sema wait post if print
+         #%app := par + < > <= >= = * or and
          (rename-out [-define define]
                      [datum #%datum]
                      [module-begin #%module-begin]
@@ -65,6 +65,17 @@
                        (maybe-swap-thread stx)
                        secret-id)]))))))]))
 
+(define-syntax (print stx)
+  (syntax-parse stx
+    [(_ id:id ...)
+     #'(print/proc (cons 'id id) ...)]))
+(define (print/proc . stuff)
+  (for ([x (in-list stuff)]
+        [i (in-naturals)])
+    (unless (zero? i) (display " "))
+    (printf "~a ~s" (car x) (cdr x)))
+  (newline))
+
 (define-syntax (par stx)
   (syntax-parse stx
     [(_ e:expr ...+)
@@ -100,6 +111,23 @@
 (define (pick-first-thd thds)
   (car (sort-thds thds)))
 
+(define-for-syntax (check/rewrite-var-seq stx)
+  (for/list ([d-or-v (in-list (syntax->list stx))])
+    (syntax-parse d-or-v #:literals (var -define)
+      [(var id:id expr:expr)
+       d-or-v]
+      [(-define . whatever)
+       d-or-v])))
+
+(define-syntax (while stx)
+  (syntax-parse stx
+    [(_ test:expr define-or-var ... body)
+     #`(let loop ()
+         (when test
+           #,@(check/rewrite-var-seq #'(define-or-var ...))
+           body
+           (loop)))]))
+
 (define-syntax (module-begin stx)
   (syntax-parse stx
     [(_ lr:maybe-left-to-right define-or-var ... body)
@@ -114,18 +142,13 @@
           (syntax-parameterize ([the-par/proc #'par/proc]
                                 [the-maybe-swap-thread/proc #'maybe-swap-thread/proc]
                                 [the-sema% #'sema%])
-                               #,@(for/list ([d-or-v (in-list (syntax->list #'(define-or-var ...)))])
-                                    (syntax-parse d-or-v #:literals (var -define)
-                                      [(var id:id expr:expr)
-                                       d-or-v]
-                                      [(-define . whatever)
-                                       d-or-v]))
+                               #,@(check/rewrite-var-seq #'(define-or-var ...))
                                body))
         ;(module+ main (printf "starting\n") (main))
         (module+ main (time (run-many-trials main))))]))
 
 (define-syntax (true stx) #'#t)
-(define-syntax (false stx) #'#t)
+(define-syntax (false stx) #'#f)
 (define-syntax (datum stx)
   (syntax-case stx ()
     [(_ . d)
