@@ -2,13 +2,14 @@
 (require (for-syntax syntax/parse
                      racket/base)
          racket/format
+         racket/class
          racket/match
          racket/pretty
          racket/stxparam
          "sync.rkt")
 
 (provide true false var
-         dot rec
+         dot rec sema wait post
          #%app := par +
          (rename-out [-define define]
                      [datum #%datum]
@@ -17,14 +18,29 @@
 
 (define-syntax-parameter the-par/proc #f)
 (define-syntax-parameter the-maybe-swap-thread/proc #f)
+(define-syntax-parameter the-sema% #f)
+
+(define-syntax (sema stx)
+  (define sema% (syntax-parameter-value #'the-sema%))
+  (unless sema%
+    (raise-syntax-error #f "server not set up"))
+  (syntax-parse stx
+    [(_ arg)
+     #`(new #,sema% [count arg] [src #,(syntax/loc stx (here))])]))
+(define (post sema)
+  (unless (and (object? sema) (is-a? sema sema<%>))
+    (raise-argument-error 'post "sema" sema))
+  (send sema post))
+(define (wait sema)
+  (unless (and (object? sema) (is-a? sema sema<%>))
+    (raise-argument-error 'wait "sema" sema))
+  (send sema wait))
 
 (define-syntax (maybe-swap-thread stx)
   (define maybe-swap-thread/proc (syntax-parameter-value #'the-maybe-swap-thread/proc))
   (unless maybe-swap-thread/proc
     (raise-syntax-error #f "server not set up"))
-  #`(#,maybe-swap-thread/proc '#,(syntax-source stx)
-                              #,(syntax-line stx)
-                              #,(syntax-column stx)))
+  #`(#,maybe-swap-thread/proc #,(syntax/loc stx (here))))
 
 (define-syntax (var stx)
   (syntax-parse stx
@@ -51,9 +67,7 @@
     [(_ e:expr ...+)
      (define par/proc (syntax-parameter-value #'the-par/proc))
      (unless par/proc (raise-syntax-error #f "server not set up"))
-     #`(#,par/proc '#,(syntax-source stx)
-                 #,(syntax-line stx)
-                 #,(syntax-column stx)
+     #`(#,par/proc #,(syntax/loc stx (here))
                  (λ () e) ...)]))
 
 (begin-for-syntax
@@ -88,14 +102,15 @@
     [(_ lr:maybe-left-to-right define-or-var ... body)
      #`(#%module-begin
         (provide main)
-        (define-values (par/proc maybe-swap-thread/proc)
+        (define-values (par/proc maybe-swap-thread/proc sema%)
           (start-server #,(if (syntax-e (attribute lr.left-to-right?))
                               #'pick-first-thd
                               #'pick-thd-randomly)))
         
         (define (main)
           (syntax-parameterize ([the-par/proc #'par/proc]
-                                [the-maybe-swap-thread/proc #'maybe-swap-thread/proc])
+                                [the-maybe-swap-thread/proc #'maybe-swap-thread/proc]
+                                [the-sema% #'sema%])
                                #,@(for/list ([d-or-v (in-list (syntax->list #'(define-or-var ...)))])
                                     (syntax-parse d-or-v #:literals (var -define)
                                       [(var id:id expr:expr)

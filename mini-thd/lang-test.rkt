@@ -50,3 +50,23 @@
             (:= (dot z x) 3))
        (dot z x)))
 (check-equal? (run-mod 'struct4) 3)
+
+(module sema1 "lang.rkt" #:left-to-right
+  (var s (sema 0))
+  (var x 0)
+  (seq (par (seq (:= x 1)
+                 (post s))
+            (seq (wait s)
+                 (:= x 2)))
+       x))
+(check-equal? (run-mod 'sema1) 2)
+
+(module sema2 "lang.rkt" #:left-to-right
+  (var s (sema 0))
+  (var x 0)
+  (seq (par (seq (wait s)
+                 (:= x 2))
+            (seq (:= x 1)
+                 (post s)))
+       x))
+(check-equal? (run-mod 'sema2) 2)

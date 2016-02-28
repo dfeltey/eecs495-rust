@@ -1,27 +1,36 @@
 #lang racket/base
 (require racket/match
          racket/contract
+         racket/class
          (for-syntax syntax/parse
                      racket/base))
 (provide
  (contract-out
-  [start-server (-> any/c (values (-> any/c
-                                      (or/c #f exact-nonnegative-integer?)
-                                      (or/c #f exact-nonnegative-integer?)
-                                      (-> any)
-                                      (-> any) ...
-                                      void?)
-                                  (-> any/c
-                                      (or/c #f exact-nonnegative-integer?)
-                                      (or/c #f exact-nonnegative-integer?)
-                                      void?)))]
-  [sort-thds (-> (listof waitor?) (listof waitor?))]))
+  [start-server (-> any/c (values (-> srcloc? (-> any) (-> any) ... void?)
+                                  (-> srcloc? void?)
+                                  (class/c
+                                   (init [count exact-nonnegative-integer?]
+                                         [src srcloc?])
+                                   [post (-> any/c void?)]
+                                   [wait (-> any/c void?)])))]
+  [sort-thds (-> (listof waitor?) (listof waitor?))])
+ here
+ sema<%>)
+
+(define sema<%> (interface () post wait))
+
+(define-syntax (here stx)
+  #`(srcloc '#,(syntax-source stx)
+            #,(syntax-line stx)
+            #,(syntax-column stx)
+            #,(syntax-position stx)
+            #,(syntax-span stx)))
 
 ;; thread : thread?
 ;; id : (listof nat)
 ;; semaphore : semaphore? -- hit is to wake the thread
 ;; srcloc info: where in the original program something caused a wait
-(struct waitor (thread id semaphore file line column) #:transparent)
+(struct waitor (thread id semaphore srcloc) #:transparent)
 
 (define (start-server pick-one)
   (define join-on-chan (make-channel))
@@ -57,7 +66,7 @@
              ;; nothing is running and we have no pending par that is starting work, so
              ;; start someone and loop; don't wait for things.
              (define a-waitor (pick-one waitors))
-             (match-define (waitor thd identification semaphore source line column) a-waitor)
+             (match-define (waitor thd identification semaphore srcloc) a-waitor)
              ;(printf "~a:~a:~a resuming ~a\n" source line column (eq-hash-code sema))
              (semaphore-post semaphore)
              (loop (hash-set* state
@@ -105,7 +114,7 @@
               (handle-evt
                maybe-swap-chan
                (λ (a-waitor)
-                 (match-define (waitor thd identification semaphore source line column) a-waitor)
+                 (match-define (waitor thd identification semaphore srcloc) a-waitor)
                  ;(printf "~a:~a:~a blocking ~a\n" source line column (eq-hash-code semaphore))
                  (loop (hash-set* state
                                   'active-thread (if (eq? thd active-thread) #f active-thread)
@@ -125,9 +134,31 @@
                                   'active-thread (if (eq? joining-thd active-thread) #f active-thread)
                                   'joins (cons info+thds joins))))))]))))))
 
+  (define sema%
+    (class* object% (sema<%>)
+      (define semaphore (make-semaphore 1))
+      (init-field count src)
+      (define/public (wait)
+        (call-with-semaphore
+         semaphore
+         (λ ()
+           (cond
+             [(zero? count) (error 'ack "zero")]
+             [else (set! count (- count 1))]))))
+      (define/public (post)
+        (call-with-semaphore
+         semaphore
+         (λ ()
+           (cond
+             [(zero? count)
+              (define resp (make-channel))
+              (void)]
+             [else (set! count (+ count 1))]))))
+      (super-new)))
+
   (define identification-param (make-parameter '()))
 
-  (define (par/proc source line column thunk1 . thunks)
+  (define (par/proc srcloc thunk1 . thunks)
     (define new-thds+semaphores
       (for/list ([thunk (in-list thunks)]
                  [i (in-naturals 1)])
@@ -146,19 +177,20 @@
                  (vector (waitor (current-thread)
                                  ;; waiting on the 'par' join counts as 'outside' the para
                                  (identification-param)
-                                 join-semaphore source line column)
+                                 join-semaphore srcloc)
                          new-thds))
     (semaphore-wait join-semaphore))
 
-  (define (maybe-swap-thread/proc source line column)
+  (define (maybe-swap-thread/proc srcloc)
     (define semaphore (make-semaphore 0))
     (channel-put maybe-swap-chan (waitor (current-thread)
                                          (identification-param)
-                                         semaphore source line column))
+                                         semaphore srcloc))
     (semaphore-wait semaphore))
   
   (values par/proc
-          maybe-swap-thread/proc))
+          maybe-swap-thread/proc
+          sema%))
 
 (define (remove-ith lst i)
   (cond
@@ -199,14 +231,14 @@
   (check-false (lon< '(0 1) '(0)))
   (check-true  (lon< '(0) '(0 1)))
   (check-true  (lon< '() '(0)))
-         
-  (define-values (par/proc maybe-swap-thread/proc) (start-server pick-smallest))
-  (define (mst) (maybe-swap-thread/proc #f #f #f))
+
+  (define-values (par/proc maybe-swap-thread/proc sema%) (start-server pick-smallest))
+  (define (mst) (maybe-swap-thread/proc (here)))
   (for ([x (in-range 1000)])
     (check-equal?
      (let ([x 0])
        (par/proc
-        #f #f #f
+        (here)
         (λ () (mst) (set! x 1))
         (λ () (mst) (set! x 2)))
        x)
@@ -215,7 +247,7 @@
   (check-equal?
    (let ([x 0])
      (par/proc
-      #f #f #f
+      (here)
       (λ () (mst) (set! x 2))
       (λ () (mst) (set! x 1)))
      x)
@@ -224,7 +256,7 @@
   (check-equal?
    (let ([x '()])
      (par/proc
-      #f #f #f
+      (here)
       (λ () (mst) (let ([y (cons 1 x)]) (mst) (set! x y)))
       (λ () (mst) (let ([y (cons 2 x)]) (mst) (set! x y))))
      x)
