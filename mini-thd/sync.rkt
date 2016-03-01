@@ -13,7 +13,8 @@
                                    (init [count exact-nonnegative-integer?]
                                          [src srcloc?])
                                    [post (-> any/c void?)]
-                                   [wait (-> any/c srcloc? void?)])))]
+                                   [wait (-> any/c srcloc? void?)])
+                                  (-> (listof any/c))))]
   [sort-thds (-> (listof waitor?) (listof waitor?))])
  here
  sema<%>)
@@ -39,6 +40,7 @@
   (define started-pars-chan (make-channel))
   (define posted-a-zero (make-channel))
   (define waiting-on-sema (make-channel))
+  (define transcript-chan (make-channel))
   
   (let ([main-thd (current-thread)])
     (thread
@@ -57,13 +59,18 @@
                     'joins '()
                     
                     ;; (listof (vector sema% waitor?))
-                    'sema-waitors '())])
+                    'sema-waitors '()
+
+                    ;; (listof ??)
+                    'transcript '()
+                    )])
          
          (match-define (hash-table ('active-thread active-thread)
                                    ('waitors waitors)
                                    ('started-pars started-pars)
                                    ('joins joins)
-                                   ('sema-waitors sema+waitors)) state)
+                                   ('sema-waitors sema+waitors)
+                                   ('transcript transcript)) state)
          ;(pretty-write state)
          (cond
            [(and (not active-thread)
@@ -76,10 +83,13 @@
             ;(printf "~a:~a:~a resuming ~a\n" source line column (eq-hash-code sema))
             (semaphore-post semaphore)
             (loop (hash-set* state
+                             'transcript (cons (cons identification srcloc) transcript)
                              'active-thread thd
                              'waitors (remove a-waitor waitors)))]
            [else
             (sync
+
+             (handle-evt transcript-chan (λ (resp) (channel-put resp transcript) (loop state)))
              
              (if active-thread
                  (handle-evt
@@ -240,10 +250,16 @@
                                          (identification-param)
                                          semaphore srcloc))
     (semaphore-wait semaphore))
+
+  (define (get-transcript)
+    (define chan (make-channel))
+    (channel-put transcript-chan chan)
+    (channel-get chan))
   
   (values par/proc
           maybe-swap-thread/proc
-          sema%))
+          sema%
+          get-transcript))
 
 (define (remove-ith lst i)
   (cond
@@ -285,7 +301,8 @@
   (check-true  (lon< '(0) '(0 1)))
   (check-true  (lon< '() '(0)))
 
-  (define-values (par/proc maybe-swap-thread/proc sema%) (start-server pick-smallest))
+  (define-values (par/proc maybe-swap-thread/proc sema% get-transcript)
+    (start-server pick-smallest))
   (define (mst) (maybe-swap-thread/proc (here)))
   
   (for ([x (in-range 1000)])

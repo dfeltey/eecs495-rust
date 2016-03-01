@@ -133,7 +133,7 @@
     [(_ lr:maybe-left-to-right define-or-var ... body)
      #`(#%module-begin
         (provide main)
-        (define-values (par/proc maybe-swap-thread/proc sema%)
+        (define-values (par/proc maybe-swap-thread/proc sema% get-transcript)
           (start-server #,(if (syntax-e (attribute lr.left-to-right?))
                               #'pick-first-thd
                               #'pick-thd-randomly)))
