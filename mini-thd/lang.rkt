@@ -57,12 +57,12 @@
                 (syntax-parse stx #:literals (set!)
                   [(set! _ new-expr)
                    #`(let ([nv new-expr])
-                       (maybe-swap-thread stx)
+                       #,(syntax/loc stx (maybe-swap-thread))
                        (set! secret-id nv))]
                   [x
                    (identifier? #'x)
                    #`(begin
-                       (maybe-swap-thread stx)
+                       #,(syntax/loc stx (maybe-swap-thread))
                        secret-id)]))))))]))
 
 (define-syntax (print stx)
@@ -144,7 +144,12 @@
                                 [the-sema% #'sema%])
                                #,@(check/rewrite-var-seq #'(define-or-var ...))
                                body))
-        ;(module+ main (printf "starting\n") (main))
+        #;
+        (module+ main (printf "starting\n")
+          (require racket/pretty)
+          (main)
+          (pretty-print (get-transcript)))
+        
         (module+ main (time (run-many-trials main))))]))
 
 (define-syntax (true stx) #'#t)
@@ -160,12 +165,10 @@
     [(_ id:id expr:expr)
      (syntax/loc stx (set! id expr))]
     [(_ (dot s-expr:expr id:id) v-expr:expr)
-     (syntax/loc stx
-       (begin
-         (let ([s s-expr]
-               [v v-expr])
-           (maybe-swap-thread #,stx)
-           (hash-set! s 'id v))))]))
+     #`(let ([s s-expr]
+             [v v-expr])
+         #,(syntax/loc stx (maybe-swap-thread))
+         (hash-set! s 'id v))]))
 
 (define-syntax (rec stx)
   (syntax-parse stx

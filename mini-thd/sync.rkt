@@ -297,7 +297,6 @@
          [(= n1 n2) (loop (cdr lon1) (cdr lon2))]
          [else (< n1 n2)])])))
 
-#;
 (module+ test
   (require rackunit)
 
@@ -406,31 +405,3 @@
    '(4 3 2 1))
 
   )
-
-
-(let ()
-  (define (pick-smallest thds)
-    (car (sort-thds thds)))
-  (define-values (par/proc maybe-swap-thread/proc sema%
-                           get-transcript)
-    (start-server pick-smallest))
-  (define (mst where) (maybe-swap-thread/proc where))
-
-  (let ([x 0])
-    (par/proc
-     (here)
-     (λ () (mst (here)) (set! x 3))
-     (λ () (par/proc
-            (here)
-            (λ () (mst (here)) (set! x 1))
-            (λ () (mst (here)) (set! x 3)))))
-    (par/proc
-     (here)
-     (λ () (mst (here)) (set! x 3))
-     (λ () (par/proc
-            (here)
-            (λ () (mst (here)) (set! x 1))
-            (λ () (mst (here)) (set! x 3)))))
-    x)
-
-  (get-transcript))
