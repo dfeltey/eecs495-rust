@@ -15,10 +15,15 @@
        y))
 (check-equal? (run-mod 'assign1) 1)
 
-(module fun "lang.rkt" #:left-to-right
+(module fun1 "lang.rkt" #:left-to-right
+  (define (f) 1)
+  (f))
+(check-equal? (run-mod 'fun1) 1)
+
+(module fun2 "lang.rkt" #:left-to-right
   (define (f z) (+ z 1))
   (f 3))
-(check-equal? (run-mod 'fun) 4)
+(check-equal? (run-mod 'fun2) 4)
 
 (module par1 "lang.rkt" #:left-to-right
   (var y 0)

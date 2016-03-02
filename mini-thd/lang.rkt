@@ -88,9 +88,6 @@
   (define-syntax-class var-decl
     #:description "variable declaration"
     (pattern (var id:id rhs:expr)))
-  (define-syntax-class define-header
-    #:description "define header"
-    (pattern (f-id:id x-id:id ...+)))
   (define-syntax-class define-or-var
     #:description "define header"
     (pattern (f-id:id x-id:id ...+)))
@@ -102,8 +99,31 @@
 
 (define-syntax (-define stx)
   (syntax-parse stx
-    [(_ h:define-header var-decls:var-decl ... body)
-     #'(define h (define var-decls.id var-decls.rhs) ... body)]))
+    [(_ (f:id x:id ...) var-decls:var-decl ... body)
+     (with-syntax ([(secret-f) (generate-temporaries #'(f))]
+                   [(secret-x ...) (generate-temporaries #'(x ...))])
+       #'(begin
+           (define secret-f
+             (let ([f (λ (secret-x ...)
+                        (define-no-set!-var-transformer x secret-x) ...
+                        (let ()
+                          (define var-decls.id var-decls.rhs) ...
+                          body))])
+               f))
+           (define-no-set!-var-transformer f secret-f)))]))
+
+(define-syntax (define-no-set!-var-transformer stx)
+  (syntax-parse stx
+    [(_ x:id secret-x:id)
+     #'(define-syntax x
+         (make-set!-transformer
+          (λ (stx)
+            (syntax-parse stx #:literals (set!)
+              [id:id #'secret-x]
+              [(_ args (... ...))
+               (with-syntax ([app (datum->syntax stx '#%app)])
+                 #'(app secret-x args (... ...)))]
+              [(set! . whatever) (raise-syntax-error 'x "assignment not allowed")]))))]))
 
 (define (pick-thd-randomly thds)
   (list-ref (sort-thds thds)
