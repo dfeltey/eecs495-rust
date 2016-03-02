@@ -4,7 +4,8 @@
          racket/match)
 
 (define pth
-  (string->path "/Users/robby/git/dfeltey/eecs495-rust/mini-thd/sync.rkt"))
+  (string->path "/Users/robby/git/dfeltey/eecs495-rust/mini-thd/ex2.rkt"))
+#;
 (define example
   (list
    (t-choice '#(() join) (srcloc pth 428 5 15283 6))
@@ -21,6 +22,106 @@
    (t-choice '(0) (srcloc pth 422 16 15115 6))
    (t-par '(1) (srcloc pth 424 12 15168 6) 2)
    (t-par '() (srcloc pth 421 5 15092 6) 2)))
+(define example
+(list
+ (t-choice
+  '()
+  (srcloc
+   pth
+   21
+   5
+   342
+   2))
+ (t-choice
+  '#(() join)
+  (srcloc
+   pth
+   18
+   5
+   266
+   70))
+ (t-choice
+  '(1)
+  (srcloc
+   pth
+   9
+   2
+   173
+   85))
+ (t-choice
+  '(1)
+  (srcloc
+   pth
+   19
+   21
+   307
+   2))
+ (t-choice
+  '(0)
+  (srcloc
+   pth
+   9
+   2
+   173
+   85))
+ (t-choice
+  '(2)
+  (srcloc
+   pth
+   9
+   2
+   173
+   85))
+ (t-choice
+  '(2)
+  (srcloc
+   pth
+   20
+   21
+   332
+   2))
+ (t-choice
+  '(0)
+  (srcloc
+   pth
+   18
+   21
+   282
+   2))
+ (t-par
+  '()
+  (srcloc
+   pth
+   18
+   5
+   266
+   70)
+  3)
+ (t-choice
+  '()
+  (srcloc
+   pth
+   6
+   24
+   142
+   2))
+ (t-choice
+  '()
+  (srcloc
+   pth
+   5
+   24
+   112
+   2))
+ (t-choice
+  '()
+  (srcloc
+   pth
+   4
+   24
+   82
+   2))))
+
 
 
 (define neighbors (make-hash))
@@ -93,6 +194,6 @@
     (printf "  \"~a\" -> \"~a\"\n" parent child)))
 (for ([(parent children) (in-hash hb)])
   (for ([child (in-list children)])
-    (printf "  \"~a\" -> \"~a\" [style=dotted]\n" parent child)))
+    (printf "  \"~a\" -> \"~a\" [style=dotted, constraint=false]\n" parent child)))
 (printf "}\n")
 

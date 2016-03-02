@@ -25,6 +25,26 @@
   (f 3))
 (check-equal? (run-mod 'fun2) 4)
 
+(module fun3 "lang.rkt" #:left-to-right
+  (define (f)
+    (var q 0)
+    (var r 1)
+    (seq (par (:= r q)
+              (:= q 2))
+         r))
+  (f))
+(check-equal? (run-mod 'fun3) 0)
+
+(module fun4 "lang.rkt" #:left-to-right
+  (define (f)
+    (var q 0)
+    (var r 1)
+    (seq (par (:= q 2)
+              (:= r q))
+         r))
+  (f))
+(check-equal? (run-mod 'fun4) 2)
+
 (module par1 "lang.rkt" #:left-to-right
   (var y 0)
   (seq (par (:= y (+ y 1))

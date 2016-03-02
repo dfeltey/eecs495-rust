@@ -6,7 +6,14 @@
 (var l3 (rec (hd 3) (tl l2)))
 
 (define (drop-next l)
-  (:= (dot l tl) (dot (dot l tl) tl)))
+  (:= (dot
+       l
+       tl)
+      (dot
+       (dot
+        l
+        tl)
+       tl)))
 
 (seq (par (drop-next l3)
           (drop-next l2)
