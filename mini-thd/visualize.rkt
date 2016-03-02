@@ -41,23 +41,7 @@
    266
    70))
  (t-choice
-  '(1)
-  (srcloc
-   pth
-   9
-   2
-   173
-   85))
- (t-choice
-  '(1)
-  (srcloc
-   pth
-   19
-   21
-   307
-   2))
- (t-choice
-  '(0)
+  '(2)
   (srcloc
    pth
    9
@@ -68,10 +52,66 @@
   '(2)
   (srcloc
    pth
+   12
+   6
+   208
+   49))
+ (t-choice
+  '(0)
+  (srcloc
+   pth
    9
    2
    173
    85))
+ (t-choice
+  '(0)
+  (srcloc
+   pth
+   12
+   6
+   208
+   49))
+ (t-choice
+  '(2)
+  (srcloc
+   pth
+   13
+   7
+   220
+   26))
+ (t-choice
+  '(0)
+  (srcloc
+   pth
+   13
+   7
+   220
+   26))
+ (t-choice
+  '(1)
+  (srcloc
+   pth
+   9
+   2
+   173
+   85))
+ (t-choice
+  '(1)
+  (srcloc
+   pth
+   12
+   6
+   208
+   49))
+ (t-choice
+  '(0)
+  (srcloc
+   pth
+   18
+   21
+   282
+   2))
  (t-choice
   '(2)
   (srcloc
@@ -81,12 +121,20 @@
    332
    2))
  (t-choice
-  '(0)
+  '(1)
   (srcloc
    pth
-   18
+   13
+   7
+   220
+   26))
+ (t-choice
+  '(1)
+  (srcloc
+   pth
+   19
    21
-   282
+   307
    2))
  (t-par
   '()
@@ -149,21 +197,21 @@
     [else
      (match (car transcript)
        [(t-par identification srcloc size)
-        (define par-start (new-node (~a identification " start")))
+        (define par-start (new-node (~a "par line " (srcloc-line srcloc))))
         (define node (hash-ref threads identification))
         (add-edge! node par-start)
+        (add-hb-edge! last-thing par-start)
         (loop (cdr transcript)
-              last-thing
+              par-start
               (for/fold ([threads (hash-remove threads identification)])
                         ([i (in-range size)])
                 (define child-identification (cons i identification))
-                (define par-child-start (new-node (~a child-identification " start")))
-                (add-edge! par-start par-child-start)
                 (hash-set threads
                           (cons i identification)
-                          par-child-start)))]
+                          par-start)))]
        [(t-choice (vector identification 'join) srcloc)
-        (define join-node (new-node (~a identification " join")))
+        (define join-node (new-node (~a "join line " (srcloc-line srcloc))))
+        (add-hb-edge! last-thing join-node)
         (define to-remove
           (for/list ([(thread-identification node) (in-hash threads)]
                      #:when (equal? (cdr thread-identification) identification))
@@ -174,7 +222,7 @@
                     ([identification-to-remove (in-list to-remove)])
             (hash-remove threads identification-to-remove)))
         (loop (cdr transcript)
-              last-thing
+              join-node
               (hash-set threads identification join-node))]
        [(t-choice identification srcloc)
         (define prev-node (hash-ref threads identification))
@@ -194,6 +242,6 @@
     (printf "  \"~a\" -> \"~a\"\n" parent child)))
 (for ([(parent children) (in-hash hb)])
   (for ([child (in-list children)])
-    (printf "  \"~a\" -> \"~a\" [style=dotted, constraint=false]\n" parent child)))
+    (printf "  \"~a\" -> \"~a\" [style=dashed, color=red]\n" parent child)))
 (printf "}\n")
 
