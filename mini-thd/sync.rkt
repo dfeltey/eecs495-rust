@@ -3,18 +3,20 @@
          racket/contract
          racket/class
          racket/pretty
+         "visualize-struct.rkt"
          (for-syntax syntax/parse
                      racket/base))
 (provide
  (contract-out
-  [start-server (-> any/c (values (-> srcloc? (-> any) (-> any) ... void?)
-                                  (-> srcloc? void?)
-                                  (class/c
-                                   (init [count exact-nonnegative-integer?]
-                                         [src srcloc?])
-                                   [post (-> any/c void?)]
-                                   [wait (-> any/c srcloc? void?)])
-                                  (-> (listof any/c))))]
+  [start-server (-> (-> (listof waitor?) waitor?)
+                    (values (-> srcloc? (-> any) (-> any) ... void?)
+                            (-> srcloc? void?)
+                            (class/c
+                             (init [count exact-nonnegative-integer?]
+                                   [src srcloc?])
+                             [post (-> any/c void?)]
+                             [wait (-> any/c srcloc? void?)])
+                            (-> (listof any/c))))]
   [sort-thds (-> (listof waitor?) (listof waitor?))])
  here
  sema<%>)
@@ -29,7 +31,7 @@
             #,(syntax-span stx)))
 
 ;; thread : thread?
-;; id : (listof nat)
+;; id : (listof (list/c nat nat))
 ;; semaphore : semaphore? -- hit is to wake the thread
 ;; srcloc info: where in the original program something caused a wait
 (struct waitor (thread id semaphore srcloc) #:transparent)
@@ -83,7 +85,8 @@
             ;(printf "~a:~a:~a resuming ~a\n" source line column (eq-hash-code sema))
             (semaphore-post semaphore)
             (loop (hash-set* state
-                             'transcript (cons (cons identification srcloc) transcript)
+                             'transcript (cons (t-choice identification srcloc)
+                                               transcript)
                              'active-thread thd
                              'waitors (remove a-waitor waitors)))]
            [else
@@ -139,8 +142,13 @@
              
              (handle-evt
               started-pars-chan
-              (λ (new-thds)
-                (loop (hash-set state 'started-pars (append new-thds started-pars)))))
+              (λ (identification+srcloc+new-thds)
+                (match-define (vector identification srcloc new-thds) identification+srcloc+new-thds)
+                (loop (hash-set* state
+                                 'transcript (cons (t-par identification srcloc
+                                                          (+ 1 (length new-thds)))
+                                                   transcript)
+                                 'started-pars (append new-thds started-pars)))))
              
              (handle-evt
               join-on-chan
@@ -230,7 +238,7 @@
                 (thread (λ () (semaphore-wait semaphore) (thunk))))
               semaphore)))
     (define new-thds (map car new-thds+semaphores))
-    (channel-put started-pars-chan new-thds)
+    (channel-put started-pars-chan (vector (identification-param) srcloc new-thds))
     (for ([thd+semaphore (in-list new-thds+semaphores)])
       (semaphore-post (cdr thd+semaphore)))
     (parameterize ([identification-param (cons 0 (identification-param))])
@@ -239,7 +247,7 @@
     (channel-put join-on-chan
                  (vector (waitor (current-thread)
                                  ;; waiting on the 'par' join counts as 'outside' the para
-                                 (identification-param)
+                                 (vector (identification-param) 'join)
                                  join-semaphore srcloc)
                          new-thds))
     (semaphore-wait join-semaphore))
@@ -279,7 +287,7 @@
              [lon2 (reverse lon2-orig)])
     (cond
       [(and (null? lon2) (null? lon1))
-       (error 'lon-compare "found two equal lons! ~s" lon1-orig)]
+       (error 'lon-compare "found two equal lons! ~s ~s" lon1-orig lon2-orig)]
       [(null? lon1) #t]
       [(null? lon2) #f]
       [else
@@ -289,6 +297,7 @@
          [(= n1 n2) (loop (cdr lon1) (cdr lon2))]
          [else (< n1 n2)])])))
 
+#;
 (module+ test
   (require rackunit)
 
@@ -398,3 +407,30 @@
 
   )
 
+
+(let ()
+  (define (pick-smallest thds)
+    (car (sort-thds thds)))
+  (define-values (par/proc maybe-swap-thread/proc sema%
+                           get-transcript)
+    (start-server pick-smallest))
+  (define (mst where) (maybe-swap-thread/proc where))
+
+  (let ([x 0])
+    (par/proc
+     (here)
+     (λ () (mst (here)) (set! x 3))
+     (λ () (par/proc
+            (here)
+            (λ () (mst (here)) (set! x 1))
+            (λ () (mst (here)) (set! x 3)))))
+    (par/proc
+     (here)
+     (λ () (mst (here)) (set! x 3))
+     (λ () (par/proc
+            (here)
+            (λ () (mst (here)) (set! x 1))
+            (λ () (mst (here)) (set! x 3)))))
+    x)
+
+  (get-transcript))
