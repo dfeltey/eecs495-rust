@@ -51,6 +51,26 @@
        (dot z x)))
 (check-equal? (run-mod 'struct4) 3)
 
+(module struct5 "lang.rkt" #:left-to-right
+  (var s (rec (f 1)))
+  (var y 0)
+  (define (f s)
+    (seq (par (:= (dot s f) 2)
+              (:= y (dot s f)))
+         y))
+  (f s))
+(check-equal? (run-mod 'struct5) 2)
+
+(module struct6 "lang.rkt" #:left-to-right
+  (var s (rec (f 1)))
+  (var y 0)
+  (define (f s)
+    (seq (par (:= y (dot s f))
+              (:= (dot s f) 2))
+         y))
+  (f s))
+(check-equal? (run-mod 'struct6) 1)
+
 (module sema1 "lang.rkt" #:left-to-right
   (var s (sema 0))
   (var x 0)

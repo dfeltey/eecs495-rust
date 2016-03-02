@@ -177,7 +177,9 @@
 (define-syntax (dot stx)
   (syntax-parse stx
     [(_ expr:expr id:id)
-     #'(hash-ref expr 'id)]))
+     #`(let ([e expr])
+         #,(syntax/loc stx (maybe-swap-thread))
+         (hash-ref e 'id))]))
 
 (define (run-many-trials thunk)
   (let loop ([current-trials (hash)]
