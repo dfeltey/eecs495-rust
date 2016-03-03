@@ -262,7 +262,7 @@
   (define (get-transcript)
     (define chan (make-channel))
     (channel-put transcript-chan chan)
-    (channel-get chan))
+    (reverse (channel-get chan)))
   
   (values par/proc
           maybe-swap-thread/proc
