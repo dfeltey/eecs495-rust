@@ -1,66 +1,35 @@
 #lang racket/base
 (require "visualize-struct.rkt"
+         "graph.rkt"
          racket/format
          racket/match
          pict)
 
-(module+ test (require rackunit))
-
-(define pth
-  (string->path "/Users/robby/git/dfeltey/eecs495-rust/mini-thd/ex2.rkt"))
-
-(define example
-  (list
-   (t-choice '() (srcloc pth 21 5 342 2))
-   (t-choice '#(() join) (srcloc pth 18 5 266 70))
-   (t-choice '(2) (srcloc pth 9 2 173 85))
-   (t-choice '(2) (srcloc pth 12 6 208 49))
-   (t-choice '(0) (srcloc pth 9 2 173 85))
-   (t-choice '(0) (srcloc pth 12 6 208 49))
-   (t-choice '(2) (srcloc pth 13 7 220 26))
-   (t-choice '(0) (srcloc pth 13 7 220 26))
-   (t-choice '(1) (srcloc pth 9 2 173 85))
-   (t-choice '(1) (srcloc pth 12 6 208 49))
-   (t-choice '(0) (srcloc pth 18 21 282 2))
-   (t-choice '(2) (srcloc pth 20 21 332 2))
-   (t-choice '(1) (srcloc pth 13 7 220 26))
-   (t-choice '(1) (srcloc pth 19 21 307 2))
-   (t-par '() (srcloc pth 18 5 266 70) 3)
-   (t-choice '() (srcloc pth 6 24 142 2))
-   (t-choice '() (srcloc pth 5 24 112 2))
-   (t-choice '() (srcloc pth 4 24 82 2))))
-
-
-(define (get-neighbors graph node)
-  (hash-ref (graph-neighbors graph) node '()))
-(define (get-backwards-neighbors graph node)
-  (hash-ref (graph-backwards-neighbors graph) node '()))
-
-;; neighbors : string -o> (listof string)
-;; backwards-neighbors : string -o> (listof string)
-;; hb : string -o> (listof string)
-;; nodes : string -o> yinfo
-(struct graph (neighbors backwards-neighbors hb nodes) #:transparent)
-
-(define (new-basic-node graph name)
-  (define nodes (graph-nodes graph))
-  (define n (~a "n" (hash-count nodes)))
-  (hash-set! nodes n (text name))
-  n)
-(define (add-edge! a-graph n1 n2)
-  (define neighbors (graph-neighbors a-graph))
-  (define backwards-neighbors (graph-backwards-neighbors a-graph))
-  (hash-set! neighbors n1 (cons n2 (get-neighbors a-graph n1)))
-  (hash-set! backwards-neighbors n2 (cons n1 (get-backwards-neighbors a-graph n2))))
-(define (add-hb-edge! a-graph n1 n2)
-  (define hb (graph-hb a-graph))
-  (hash-set! hb n1 (cons n2 (hash-ref hb n1 '()))))
-(define (make-empty-graph)
-  (define neighbors (make-hash))
-  (define backwards-neighbors (make-hash))
-  (define hb (make-hash))
-  (define nodes (make-hash))
-  (graph neighbors backwards-neighbors hb nodes))
+(module+ test (require rackunit)
+  
+  (define pth
+    (string->path "/Users/robby/git/dfeltey/eecs495-rust/mini-thd/ex2.rkt"))
+  
+  (define example
+    (list
+     (t-choice '() (srcloc pth 21 5 342 2))
+     (t-choice '#(() join) (srcloc pth 18 5 266 70))
+     (t-choice '(2) (srcloc pth 9 2 173 85))
+     (t-choice '(2) (srcloc pth 12 6 208 49))
+     (t-choice '(0) (srcloc pth 9 2 173 85))
+     (t-choice '(0) (srcloc pth 12 6 208 49))
+     (t-choice '(2) (srcloc pth 13 7 220 26))
+     (t-choice '(0) (srcloc pth 13 7 220 26))
+     (t-choice '(1) (srcloc pth 9 2 173 85))
+     (t-choice '(1) (srcloc pth 12 6 208 49))
+     (t-choice '(0) (srcloc pth 18 21 282 2))
+     (t-choice '(2) (srcloc pth 20 21 332 2))
+     (t-choice '(1) (srcloc pth 13 7 220 26))
+     (t-choice '(1) (srcloc pth 19 21 307 2))
+     (t-par '() (srcloc pth 18 5 266 70) 3)
+     (t-choice '() (srcloc pth 6 24 142 2))
+     (t-choice '() (srcloc pth 5 24 112 2))
+     (t-choice '() (srcloc pth 4 24 82 2)))))
 
 (define (build-basic-graph transcript)
   (define a-graph (make-empty-graph))
