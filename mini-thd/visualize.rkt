@@ -42,17 +42,6 @@
 ;; nodes : string -o> yinfo
 (struct graph (neighbors backwards-neighbors hb nodes) #:transparent)
 
-;; a yinfo is either:
-;;  - a pict
-;;  - a (listof (list/c real yinfo))
-(define (yinfo-height yinfo)
-  (cond
-    [(pict? yinfo) (pict-height yinfo)]
-    [else (for/fold ([biggest 0])
-                    ([real+yinfo (in-list yinfo)])
-            (max biggest (+ (list-ref real+yinfo 0)
-                            (yinfo-height (list-ref real+yinfo 1)))))]))
-
 (define (new-basic-node graph name)
   (define nodes (graph-nodes graph))
   (define n (~a "n" (hash-count nodes)))
