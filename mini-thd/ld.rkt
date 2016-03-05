@@ -1,6 +1,7 @@
 #lang racket/base
 (require racket/set
          racket/format)
+(provide longest-distances)
 
 ;; This uses the topological sorting algorithm
 ;; from Wikipedia attributed to Kahn (1962). 

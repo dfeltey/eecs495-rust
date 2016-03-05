@@ -4,6 +4,10 @@
          racket/format
          racket/class
          racket/stxparam
+         racket/file
+         racket/system
+         "graph.rkt"
+         "transcript-graph.rkt"
          "sync.rkt")
 
 (provide true false var while
@@ -95,7 +99,12 @@
     (pattern (~seq #:left-to-right)
              #:with left-to-right? #t)
     (pattern (~seq)
-             #:with left-to-right? #f)))
+             #:with left-to-right? #f))
+  (define-splicing-syntax-class maybe-histogram
+    (pattern (~seq #:histogram)
+             #:with histogram? #t)
+    (pattern (~seq)
+             #:with histogram? #f)))
 
 (define-syntax (-define stx)
   (syntax-parse stx
@@ -150,27 +159,30 @@
 
 (define-syntax (module-begin stx)
   (syntax-parse stx
-    [(_ lr:maybe-left-to-right define-or-var ... body)
+    [(_ lr:maybe-left-to-right hist:maybe-histogram define-or-var ... body)
      #`(#%module-begin
         (provide main)
-        (define-values (par/proc maybe-swap-thread/proc sema% get-transcript)
-          (start-server #,(if (syntax-e (attribute lr.left-to-right?))
-                              #'pick-first-thd
-                              #'pick-thd-randomly)))
         
         (define (main)
-          (syntax-parameterize ([the-par/proc #'par/proc]
-                                [the-maybe-swap-thread/proc #'maybe-swap-thread/proc]
-                                [the-sema% #'sema%])
-                               #,@(check/rewrite-var-seq #'(define-or-var ...))
-                               body))
-        #;
-        (module+ main (printf "starting\n")
-          (require racket/pretty)
-          (main)
-          (pretty-print (get-transcript)))
+
+          (define-values (par/proc maybe-swap-thread/proc sema% get-transcript)
+            (start-server #,(if (syntax-e (attribute lr.left-to-right?))
+                                #'pick-first-thd
+                                #'pick-thd-randomly)))
+          
+          (values
+           (syntax-parameterize ([the-par/proc #'par/proc]
+                                 [the-maybe-swap-thread/proc #'maybe-swap-thread/proc]
+                                 [the-sema% #'sema%])
+                                #,@(check/rewrite-var-seq #'(define-or-var ...))
+                                body)
+           get-transcript))
         
-        (module+ main (time (run-many-trials main))))]))
+        (module+ main
+          (run-many-trials
+           main #,(if (syntax-e (attribute lr.left-to-right?))
+                      #'#t
+                      #'#f))))]))
 
 (define-syntax (true stx) #'#t)
 (define-syntax (false stx) #'#f)
@@ -201,11 +213,40 @@
          #,(syntax/loc stx (maybe-swap-thread))
          (hash-ref e 'id))]))
 
-(define (run-many-trials thunk)
+;; get-transcript : (or/c #f (-> any/c)) -- if a thunk, then we're looking
+;;                  for a counter example; otherwise show a histogram
+(define (run-many-trials thunk hist?)
+  (cond
+    [hist? (run-many-trials/hist thunk)]
+    [else
+     (let loop ()
+       (define-values (result get-transcript) (thunk))
+       (cond
+         [result (loop)]
+         [else
+          (define a-graph (build-transcript-graph (get-transcript)))
+          (define pf (make-temporary-file "mini-thd-transcript~a.pdf"))
+          (define-values (in out) (make-pipe))
+          (thread
+           (λ ()
+             (gen-dot-code a-graph out)
+             (close-output-port out)))
+          (call-with-output-file pf
+            (λ (port)
+              (parameterize ([current-output-port port]
+                             [current-input-port in])
+                (system "/usr/local/bin/dot -Tpdf")))
+            #:exists 'truncate)
+          (parameterize ([current-input-port (open-input-string "")])
+            (system (format "/usr/bin/open ~a" pf)))
+          (void)]))]))
+          
+
+(define (run-many-trials/hist thunk)
   (let loop ([current-trials (hash)]
              [current-summary (hash)]
              [trials 0])
-    (define next (thunk))
+    (define-values (next get-transcript) (thunk))
     (define next-trials
       (hash-set current-trials
                 next

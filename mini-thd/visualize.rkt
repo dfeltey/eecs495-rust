@@ -1,102 +1,136 @@
 #lang racket/base
-(require "visualize-struct.rkt"
-         "graph.rkt"
-         racket/format
-         racket/match
-         pict)
+(require "graph.rkt" "ld.rkt"
+         pict
+         racket/list)
 
-(module+ test (require rackunit)
-  
-  (define pth
-    (string->path "/Users/robby/git/dfeltey/eecs495-rust/mini-thd/ex2.rkt"))
-  
-  (define example
-    (list
-     (t-choice '() (srcloc pth 21 5 342 2))
-     (t-choice '#(() join) (srcloc pth 18 5 266 70))
-     (t-choice '(2) (srcloc pth 9 2 173 85))
-     (t-choice '(2) (srcloc pth 12 6 208 49))
-     (t-choice '(0) (srcloc pth 9 2 173 85))
-     (t-choice '(0) (srcloc pth 12 6 208 49))
-     (t-choice '(2) (srcloc pth 13 7 220 26))
-     (t-choice '(0) (srcloc pth 13 7 220 26))
-     (t-choice '(1) (srcloc pth 9 2 173 85))
-     (t-choice '(1) (srcloc pth 12 6 208 49))
-     (t-choice '(0) (srcloc pth 18 21 282 2))
-     (t-choice '(2) (srcloc pth 20 21 332 2))
-     (t-choice '(1) (srcloc pth 13 7 220 26))
-     (t-choice '(1) (srcloc pth 19 21 307 2))
-     (t-par '() (srcloc pth 18 5 266 70) 3)
-     (t-choice '() (srcloc pth 6 24 142 2))
-     (t-choice '() (srcloc pth 5 24 112 2))
-     (t-choice '() (srcloc pth 4 24 82 2)))))
+(define row-gap-size 10)
+(define (node-height a-graph n)
+  (pict-height (node-info-pict (hash-ref (graph-nodes a-graph) n))))
 
-(define (build-basic-graph transcript)
-  (define a-graph (make-empty-graph))
+(define (build-y-coordinates a-graph)
+  (define layers (build-layers a-graph))
   
-  (define first-node (new-basic-node a-graph "start"))
-  (let loop ([transcript transcript]
-             
-             [last-thing first-node]
-             
-             ;; thread-identifier -> node
-             [threads (hash '() first-node)])
-    (cond
-      [(null? transcript) (void)]
-      [else
-       (match (car transcript)
-         [(t-par identification srcloc size)
-          (define par-start (new-basic-node a-graph (~a "par line " (srcloc-line srcloc))))
-          (define node (hash-ref threads identification))
-          (add-edge! a-graph node par-start)
-          (add-hb-edge! a-graph last-thing par-start)
-          (loop (cdr transcript)
-                par-start
-                (for/fold ([threads (hash-remove threads identification)])
-                          ([i (in-range size)])
-                  (define child-identification (cons i identification))
-                  (hash-set threads
-                            (cons i identification)
-                            par-start)))]
-         [(t-choice (vector identification 'join) srcloc)
-          (define join-node (new-basic-node a-graph (~a "join line " (srcloc-line srcloc))))
-          (add-hb-edge! a-graph last-thing join-node)
-          (define to-remove
-            (for/list ([(thread-identification node) (in-hash threads)]
-                       #:when (and (pair? thread-identification)
-                                   (equal? (cdr thread-identification) identification)))
-              (add-edge! a-graph node join-node)
-              thread-identification))
-          (define without-child-threads
-            (for/fold ([threads threads])
-                      ([identification-to-remove (in-list to-remove)])
-              (hash-remove threads identification-to-remove)))
-          (loop (cdr transcript)
-                join-node
-                (hash-set threads identification join-node))]
-         [(t-choice identification srcloc)
-          (define prev-node (hash-ref threads identification))
-          (define next-node (new-basic-node a-graph (~a "line " (srcloc-line srcloc))))
-          (add-edge! a-graph prev-node next-node)
-          (add-hb-edge! a-graph last-thing next-node)
-          (loop (cdr transcript)
-                next-node
-                (hash-set threads identification next-node))])]))
-  a-graph)
+  (define y-coordinates (make-hash))
+  (define max-layer
+    (argmax (λ (i) (length (hash-ref layers i)))
+            (build-list (hash-count layers) values)))
+  
+  (for ([(layer nodes) (in-hash layers)])
+    (for/fold ([start 0]) ([node (in-list nodes)])
+      (hash-set! y-coordinates node start)
+      (+ row-gap-size
+         start
+         (node-height a-graph node))))
+  max-layer)
+
+;; EFFECT: modifies a-graph to include some new edges.
+(define (build-layers a-graph)
+  (define layers (make-hash))
+  (define lds (longest-distances (graph-neighbors a-graph)))
+  (for ([(node dist) (in-hash lds)])
+    (hash-set! layers dist (cons node (hash-ref layers dist '()))))
+  (for ([(node node-info) (in-hash (graph-nodes a-graph))])
+    (define node-layer (hash-ref layers node))
+    (for ([neighbor (in-list (get-neighbors a-graph node))])
+      (define neighbor-layer (hash-ref layers neighbor))
+      (unless (node-layer . < . neighbor-layer)
+        (error 'build-layers "node ~s is at layer ~s, but has an edge to ~s at layer ~s"
+               node node-layer neighbor neighbor-layer))
+      (for/fold ([node node])
+                ([middle-layer (in-range (+ node-layer 1) neighbor-layer)])
+        (define middle (new-basic-node a-graph #f ?))
+        (remove-edge! node neighbor)
+        (add-edge! node middle)
+        (add-edge! middle neighbor))))
+  layers)
 
 (module+ test
-  (define (mksrc line) (srcloc (syntax-source #'here) line 0 #f #f))
-  (check-equal?
-   (graph-neighbors
-    (build-basic-graph (list (t-par '() (mksrc 1) 2)
-                             (t-choice '(0) (mksrc 2))
-                             (t-choice '(1) (mksrc 3))
-                             (t-choice '#(() join) (mksrc 4)))))
-   (make-hash '(("n1" . ("n3" "n2")) ("n2" . ("n4")) ("n0" . ("n1")) ("n3" . ("n4")))))
-  (check-equal?
-   (graph-hb
-    (build-basic-graph (list (t-par '() (mksrc 1) 2)
-                             (t-choice '(0) (mksrc 2))
-                             (t-choice '(1) (mksrc 3))
-                             (t-choice '#(() join) (mksrc 4)))))
-   (make-hash '(("n1" . ("n2")) ("n2" . ("n3")) ("n0" . ("n1")) ("n3" . ("n4"))))))
+  (require rackunit)
+
+  (let ()
+    (define a-graph (make-empty-graph))
+    (define n0 (new-basic-node a-graph "zero" '()))
+    (define n1 (new-basic-node a-graph "one" '(0)))
+    (define n2 (new-basic-node a-graph "two" '(1)))
+    (define n3 (new-basic-node a-graph "three" '()))
+    (add-edge! a-graph n0 n1)
+    (add-edge! a-graph n1 n3)
+    (add-edge! a-graph n0 n2)
+    (add-edge! a-graph n2 n3)
+    (define n2-height (+ (node-height a-graph n1) row-gap-size))
+    (define n0-height (/ n2-height 2))
+    (check-equal? (build-y-coordinates a-graph)
+                  (make-hash (list (cons n0 n0-height)
+                                   (cons n2 n2-height)
+                                   (cons n1 0)
+                                   (cons n3 n0-height)))))
+
+  (let ()
+    (define a-graph (make-empty-graph))
+    (define n0 (new-basic-node a-graph "zero" '()))
+    (define n1 (new-basic-node a-graph "one" '(0)))
+    (define n2 (new-basic-node a-graph "two" '(0)))
+    (define n3 (new-basic-node a-graph "three" '(1)))
+    (define n4 (new-basic-node a-graph "four" '()))
+#|
+
+     +------> n3 ------+
+n0 --+                 +--> n4
+     +---> n1 --> n2 --+
+
+|#
+    (add-edge! a-graph n0 n1)
+    (add-edge! a-graph n1 n2)
+    (add-edge! a-graph n2 n4)
+    (add-edge! a-graph n0 n3)
+    (add-edge! a-graph n3 n4)
+    (define n3-height (+ (max (node-height a-graph n1)
+                              (node-height a-graph n2))
+                         row-gap-size))
+    (define n0-height (/ n3-height 2))
+
+    (check-equal? (build-layers a-graph)
+                  (make-hash '((3 . ("n4"))
+                               (2 . ("n2" "??"))
+                               (1 . ("n1" "n3"))
+                               (0 . ("n0")))))
+
+    (check-equal? (build-y-coordinates a-graph)
+                  (make-hash (list (cons n0 n0-height)
+                                   (cons n1 0)
+                                   (cons n2 0)
+                                   (cons n3 n3-height)
+                                   (cons n4 n0-height)))))
+
+  (let ()
+    (define a-graph (make-empty-graph))
+    (define n0 (new-basic-node a-graph "zero" '(1)))
+    (define n1 (new-basic-node a-graph "one" '(0 1)))
+    (define n2 (new-basic-node a-graph "two" '(0 1)))
+    (define n3 (new-basic-node a-graph "three" '(1 1)))
+    (define n4 (new-basic-node a-graph "four" '(1)))
+    (define n5 (new-basic-node a-graph "five" '()))
+    (define n6 (new-basic-node a-graph "six" '(0)))
+    (define n7 (new-basic-node a-graph "seven" '()))
+    
+#|
+
+     +------> n6 ----------------+
+n5 --+                           |
+     +  +- n1 --> n2 --+         +---> n7
+    n0--+              +--> n4 --+
+        +----- n3 -----+
+
+|#
+    (add-edge! a-graph n5 n0)
+    (add-edge! a-graph n0 n1)
+    (add-edge! a-graph n1 n2)
+    (add-edge! a-graph n2 n4)
+    (add-edge! a-graph n0 n3)
+    (add-edge! a-graph n3 n4)
+    (add-edge! a-graph n5 n6)
+    (add-edge! a-graph n6 n7)
+    (add-edge! a-graph n4 n7)
+    
+    (check-equal? (build-y-coordinates a-graph)
+                  '?)))

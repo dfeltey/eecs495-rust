@@ -1,13 +1,26 @@
 #lang racket/base
 (require racket/format
+         racket/contract
          pict)
-(provide make-empty-graph
-         new-basic-node
-         add-edge!
-         add-hb-edge!
+(provide
+ (contract-out
+  [new-basic-node (-> graph?
+                      (or/c #f string?)
+                      (listof exact-nonnegative-integer?)
+                      string?)])
+ make-empty-graph
+ add-edge!
+ add-hb-edge!
+ remove-edge!
+ 
+ graph-neighbors
+ graph-hb
+ graph-nodes
+ node-info-pict
+ get-neighbors
 
-         graph-neighbors
-         graph-hb)
+ gen-dot-code
+ graph?)
 
 (define (get-neighbors graph node)
   (hash-ref (graph-neighbors graph) node '()))
@@ -20,16 +33,22 @@
 ;; nodes : string -o> yinfo
 (struct graph (neighbors backwards-neighbors hb nodes) #:transparent)
 
-(define (new-basic-node graph name)
+(struct node-info (pict name identification) #:transparent)
+(define (new-basic-node graph name identification)
   (define nodes (graph-nodes graph))
   (define n (~a "n" (hash-count nodes)))
-  (hash-set! nodes n (text name))
+  (hash-set! nodes n (node-info (and name (text name)) name identification))
   n)
 (define (add-edge! a-graph n1 n2)
   (define neighbors (graph-neighbors a-graph))
   (define backwards-neighbors (graph-backwards-neighbors a-graph))
   (hash-set! neighbors n1 (cons n2 (get-neighbors a-graph n1)))
   (hash-set! backwards-neighbors n2 (cons n1 (get-backwards-neighbors a-graph n2))))
+(define (remove-edge! a-graph n1 n2)
+  (define neighbors (graph-neighbors a-graph))
+  (define backwards-neighbors (graph-backwards-neighbors a-graph))
+  (hash-set! neighbors n1 (remove n2 (get-neighbors a-graph n1)))
+  (hash-set! backwards-neighbors n2 (remove n1 (get-backwards-neighbors a-graph n2))))
 (define (add-hb-edge! a-graph n1 n2)
   (define hb (graph-hb a-graph))
   (hash-set! hb n1 (cons n2 (hash-ref hb n1 '()))))
@@ -39,3 +58,28 @@
   (define hb (make-hash))
   (define nodes (make-hash))
   (graph neighbors backwards-neighbors hb nodes))
+
+(module+ test
+  (require rackunit)
+  (let ()
+    (define g (make-empty-graph))
+    (define n0 (new-basic-node g "zero" '()))
+    (define n1 (new-basic-node g "zero" '()))
+    (add-edge! g n0 n1)
+    (check-equal? (get-neighbors g n0) (list n1))
+    (remove-edge! g n0 n1)
+    (check-equal? (get-neighbors g n0) (list))))
+
+(define (gen-dot-code a-graph port)
+  (fprintf port "digraph {\n")
+  (fprintf port "  rankdir = LR\n")
+  (for ([(node a-node-info) (in-hash (graph-nodes a-graph))])
+    (fprintf port "  ~a [label=\"~a\"]\n" node (node-info-name a-node-info)))
+  (printf "\n")
+  (for ([(parent children) (in-hash (graph-neighbors a-graph))])
+    (for ([child (in-list children)])
+      (fprintf port "  \"~a\" -> \"~a\"\n" parent child)))
+  (for ([(parent children) (in-hash (graph-hb a-graph))])
+    (for ([child (in-list children)])
+      (fprintf port "  \"~a\" -> \"~a\" [style=dashed, color=red, constraint=false]\n" parent child)))
+  (fprintf port "}\n"))
