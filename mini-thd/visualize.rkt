@@ -6,14 +6,90 @@
          racket/list)
 
 (define row-gap-size 10)
-(define (node-height a-graph n)
-  (define pct (node-info-pict (hash-ref (graph-nodes a-graph) n)))
-  (if (pict? pct)
-      (pict-height pct)
-      0))
+(define column-gap-size 40)
 
-(define (build-y-coordinates a-graph)
+(define (node-height a-graph n)
+  (define pct (node-pict a-graph n))
+  (if (pict? pct) (pict-height pct) 0))
+(define (node-width a-graph n)
+  (define pct (node-pict a-graph n))
+  (if (pict? pct) (pict-width pct) 0))
+(define (node-pict a-graph n)
+  (node-info-pict (hash-ref (graph-nodes a-graph) n)))
+
+(define (graph->pict a-graph)
   (define layers (build-layers a-graph))
+  (define y-coordinates (build-y-coordinates layers a-graph))
+  (define diagram-main-height (build-diagram-main-height a-graph layers))
+  (define layer-centers
+    (apply vector (build-layer-centers a-graph layers)))
+  (define nodes-pict
+    (panorama
+     (for*/fold ([main (blank)])
+                ([(layer-index nodes) (in-hash layers)]
+                 [node (in-list nodes)])
+       (define p (node-pict a-graph node))
+       (define x (- (vector-ref layer-centers layer-index)
+                    (/ (pict-width p) 2)))
+       (define y (- (* (hash-ref y-coordinates node)
+                       diagram-main-height)
+                    (/ (pict-height p) 2)))
+       (pin-over main x y p))))
+  (add-edges a-graph nodes-pict))
+
+(define (add-edges a-graph nodes-pict)
+  (for*/fold ([main nodes-pict])
+             ([(node a-node-info) (in-hash (graph-nodes a-graph))]
+              [neighbor (in-list (hash-ref (graph-neighbors a-graph) node '()))])
+    (pin-line/under main
+                    (node-pict a-graph node)
+                    (node-pict a-graph neighbor))))
+
+(define (pin-line/under main from to)
+  (cc-superimpose
+   (launder (pin-line (ghost main) from cc-find to cc-find))
+   main))
+
+(define (build-layer-centers a-graph layers)
+  (define-values (_1 _2 starts)
+    (for/fold ([last-layer-right-edge 0]
+               [first? #t]
+               [starts '()])
+              ([layer-index (in-list (sort (hash-keys layers) <))])
+      (define layer (hash-ref layers layer-index))
+      (define max-width (for/fold ([max-width 0])
+                                  ([node (in-list layer)])
+                          (max max-width (node-width a-graph node))))
+      (values (+ max-width
+                 last-layer-right-edge
+                 (if first? 0 column-gap-size))
+              #f
+              (cons (+ last-layer-right-edge
+                       (/ max-width 2)
+                       (if first? 0 column-gap-size))
+                    starts))))
+  (reverse starts))
+
+;; returns the height of the part of the diagram that's between
+;; the y-coordinates, which are in [0,1]. This won't be quite
+;; the height because those [0,1] coordinates assume that the
+;; nodes have zero height
+(define (build-diagram-main-height a-graph layers)
+  (for/fold ([biggest 0])
+            ([(layer-index nodes) (in-hash layers)])
+    (define node-count (length nodes))
+    (define this-size
+      (for/sum ([node (in-list nodes)]
+                [i (in-naturals)])
+        (cond
+          [(= i 0) (/ (node-height a-graph node) 2)]
+          [(= i (- node-count 1))
+           (+ row-gap-size (/ (node-height a-graph node) 2))]
+          [else
+           (+ (node-height a-graph node) row-gap-size)])))
+    (max biggest this-size)))
+
+(define (build-y-coordinates layers a-graph)
   (define y-coordinates (make-hash))
   (for ([(layer-index nodes) (in-hash layers)])
     (define (node->lon n)
@@ -88,7 +164,7 @@
     (add-edge! a-graph n2 n3)
     (define n2-height (+ (node-height a-graph n1) row-gap-size))
     (define n0-height (/ n2-height 2))
-    (check-equal? (build-y-coordinates a-graph)
+    (check-equal? (build-y-coordinates (build-layers a-graph) a-graph)
                   (make-hash '(("n1" . 0) ("n2" . 1) ("n0" . 1/2) ("n3" . 1/2)))))
 
   (let ()
@@ -124,7 +200,7 @@ n0 --+                 +--> n4
     (check-equal? (node-info-identification (hash-ref (graph-nodes a-graph) "n5"))
                   '(0))
 
-    (check-equal? (build-y-coordinates a-graph)
+    (check-equal? (build-y-coordinates (build-layers a-graph) a-graph)
                   (make-hash '(("n1" . 1)
                                ("n3" . 0)
                                ("n0" . 1/2)
@@ -171,7 +247,7 @@ n5 --+                           |
                                (4 . ("n10" "n4"))
                                (5 . ("n7")))))
     
-    (check-equal? (build-y-coordinates a-graph)
+    (check-equal? (build-y-coordinates (build-layers a-graph) a-graph)
                   (make-hash '(("n8" . 0)
                                ("n9" . 0)
                                ("n4" . 1)
@@ -183,4 +259,6 @@ n5 --+                           |
                                ("n10" . 0)
                                ("n7" . 1/2)
                                ("n6" . 0)
-                               ("n5" . 1/2))))))
+                               ("n5" . 1/2))))
+
+    (graph->pict a-graph)))

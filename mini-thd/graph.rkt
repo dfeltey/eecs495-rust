@@ -39,8 +39,18 @@
 (define (new-basic-node graph name identification)
   (define nodes (graph-nodes graph))
   (define n (~a "n" (hash-count nodes)))
-  (hash-set! nodes n (node-info (and name (text name)) name identification))
+  (hash-set! nodes n (node-info (if name (make-a-pict name) (blank)) name identification))
   n)
+
+(define (make-a-pict name)
+  (define basic (text name))
+  (define space 10)
+  (cc-superimpose
+   (colorize (filled-rounded-rectangle (+ space (pict-width basic))
+                                       (+ space (pict-height basic)))
+             "white")
+   basic))
+
 (define (add-edge! a-graph n1 n2)
   (define neighbors (graph-neighbors a-graph))
   (define backwards-neighbors (graph-backwards-neighbors a-graph))
