@@ -180,7 +180,7 @@
         
         (module+ main
           (run-many-trials
-           main #,(if (syntax-e (attribute lr.left-to-right?))
+           main #,(if (syntax-e (attribute hist.histogram?))
                       #'#t
                       #'#f))))]))
 
