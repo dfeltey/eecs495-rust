@@ -16,6 +16,7 @@
          #%app := par + < > <= >= = * equal?
          or and implies not xor nor nand
          (rename-out [-define define]
+                     [-let let]
                      [datum #%datum]
                      [module-begin #%module-begin]
                      [begin seq]))
@@ -70,6 +71,22 @@
                    #`(begin
                        #,(syntax/loc stx (maybe-swap-thread))
                        secret-id)]))))))]))
+
+(define-syntax (-let stx)
+  (syntax-parse stx
+    [(_ id:id init:expr)
+     (with-syntax ([(secret-id) (generate-temporaries (list #'id))])
+       #'(begin
+           (define secret-id init)
+           (define-syntax id
+             (make-set!-transformer
+              (λ (stx)
+                (syntax-parse stx #:literals (set!)
+                  [(set! _ new-expr)
+                   (raise-syntax-error 'let "immutable variable" stx)]
+                  [x
+                   (identifier? #'x)
+                   secret-id]))))))]))
 
 (define-syntax (print stx)
   (syntax-parse stx
