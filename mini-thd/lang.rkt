@@ -261,7 +261,7 @@
                                string<?
                                #:key ~s))])
          (printf "~a% ~s\n"
-                 (~r (* 100 (hash-ref current-summary k)))
+                 (~r #:min-width 4 (* 100 (hash-ref current-summary k)))
                  k))]
       [else
        (loop next-trials next-summary (+ trials 1))])))
