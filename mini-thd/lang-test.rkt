@@ -126,6 +126,11 @@
   (equal? (sema 0) (sema 1)))
 (check-equal? (run-mod 'sema4) #f)
 
+(module sema5 "lang.rkt" #:left-to-right
+  (or (equal? (sema 0) 1234)
+      (equal? 1234 (sema 0))))
+(check-equal? (run-mod 'sema5) #f)
+
 (module if1 "lang.rkt"
   (if true 1 2))
 (check-equal? (run-mod 'if1) 1)
