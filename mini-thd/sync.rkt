@@ -17,7 +17,10 @@
                              [post (-> any/c void?)]
                              [wait (-> any/c srcloc? void?)])
                             (-> (listof any/c))))]
-  [sort-thds (-> (listof waitor?) (listof waitor?))])
+  [sort-thds (-> (listof waitor?) (listof waitor?))]
+  [lon< (-> (listof exact-nonnegative-integer?)
+            (listof exact-nonnegative-integer?)
+            boolean?)])
  here
  sema<%>)
 

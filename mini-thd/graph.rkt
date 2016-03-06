@@ -8,12 +8,14 @@
                       (or/c #f string?)
                       (listof exact-nonnegative-integer?)
                       string?)])
+ (struct-out node-info)
  make-empty-graph
  add-edge!
  add-hb-edge!
  remove-edge!
  
  graph-neighbors
+ graph-backwards-neighbors
  graph-hb
  graph-nodes
  node-info-pict
