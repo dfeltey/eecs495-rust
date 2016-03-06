@@ -86,7 +86,7 @@
                    (raise-syntax-error 'let "immutable variable" stx)]
                   [x
                    (identifier? #'x)
-                   secret-id]))))))]))
+                   #'secret-id]))))))]))
 
 (define-syntax (print stx)
   (syntax-parse stx
@@ -110,7 +110,8 @@
 (begin-for-syntax
   (define-syntax-class var-decl
     #:description "variable declaration"
-    (pattern (var id:id rhs:expr)))
+    (pattern (var id:id rhs:expr))
+    (pattern (let id:id rhs:expr)))
   (define-syntax-class define-or-var
     #:description "define header"
     (pattern (f-id:id x-id:id ...+)))
@@ -161,8 +162,10 @@
 
 (define-for-syntax (check/rewrite-var-seq stx)
   (for/list ([d-or-v (in-list (syntax->list stx))])
-    (syntax-parse d-or-v #:literals (var -define)
+    (syntax-parse d-or-v #:literals (var -define -let)
       [(var id:id expr:expr)
+       d-or-v]
+      [(-let id:id expr:expr)
        d-or-v]
       [(-define . whatever)
        d-or-v])))

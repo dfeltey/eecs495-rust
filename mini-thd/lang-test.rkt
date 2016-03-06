@@ -147,6 +147,11 @@
        x))
 (check-equal? (run-mod 'while) (* 10 9 8 7 6 5 4 3 2))
 
+(module let "lang.rkt"
+  (let x 3)
+  (+ x x))
+(check-equal? (run-mod 'let) 6)
+
 (module or "lang.rkt"
   (rec (a (or false true))
     (b (or true true))
