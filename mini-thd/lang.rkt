@@ -6,13 +6,15 @@
          racket/stxparam
          racket/file
          racket/system
+         racket/bool
          "graph.rkt"
          "transcript-graph.rkt"
          "sync.rkt")
 
 (provide true false var while
          dot rec sema wait post if print
-         #%app := par + < > <= >= = * or and
+         #%app := par + < > <= >= = *
+         or and implies not xor nor nand
          (rename-out [-define define]
                      [datum #%datum]
                      [module-begin #%module-begin]
