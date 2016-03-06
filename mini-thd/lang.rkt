@@ -249,7 +249,7 @@
              [current-summary (hash)]
              [trials 0])
     (define-values (next get-transcript) (thunk))
-    (unless (zero? trials) (when (zero? (modulo trials 200)) (printf "~a trials ...\n")))
+    (unless (zero? trials) (when (zero? (modulo trials 200)) (printf "~a trials ...\n" trials)))
     (define next-trials
       (hash-set current-trials
                 next
