@@ -9,7 +9,8 @@
          racket/bool
          "graph.rkt"
          "transcript-graph.rkt"
-         "sync.rkt")
+         "sync.rkt"
+         "visualize.rkt")
 
 (provide true false var while
          dot rec sema wait post if print
@@ -181,7 +182,10 @@
 
 (define-syntax (module-begin stx)
   (syntax-parse stx
-    [(_ lr:maybe-left-to-right hist:maybe-histogram define-or-var ... body)
+    [(_ lr:maybe-left-to-right
+        (~optional (~or (~seq (~and #:histogram histogram))
+                        (~seq (~and #:dot dot)))) ...
+        define-or-var ... body)
      #`(#%module-begin
         (provide main)
         
@@ -202,9 +206,13 @@
         
         (module+ main
           (run-many-trials
-           main #,(if (syntax-e (attribute hist.histogram?))
-                      #'#t
-                      #'#f))))]))
+           main
+           #,(if (null? (attribute histogram))
+                 #'#t
+                 #'#f)
+           #,(if (null? (attribute dot))
+                 #'#t
+                 #'#f))))]))
 
 (define-syntax (true stx) #'#t)
 (define-syntax (false stx) #'#f)
@@ -237,7 +245,7 @@
 
 ;; get-transcript : (or/c #f (-> any/c)) -- if a thunk, then we're looking
 ;;                  for a counter example; otherwise show a histogram
-(define (run-many-trials thunk hist?)
+(define (run-many-trials thunk hist? dot?)
   (cond
     [hist? (run-many-trials/hist thunk)]
     [else
@@ -247,21 +255,26 @@
          [result (loop)]
          [else
           (define a-graph (build-transcript-graph (get-transcript)))
-          (define pf (make-temporary-file "mini-thd-transcript~a.pdf"))
-          (define-values (in out) (make-pipe))
-          (thread
-           (λ ()
-             (gen-dot-code a-graph out)
-             (close-output-port out)))
-          (call-with-output-file pf
-            (λ (port)
-              (parameterize ([current-output-port port]
-                             [current-input-port in])
-                (system "/usr/local/bin/dot -Tpdf")))
-            #:exists 'truncate)
-          (parameterize ([current-input-port (open-input-string "")])
-            (system (format "/usr/bin/open ~a" pf)))
-          (void)]))]))
+          (cond
+            [dot? (show-dot-graph a-graph)]
+            [else (graph->pict a-graph)])]))]))
+
+(define (show-dot-graph a-graph)
+  (define pf (make-temporary-file "mini-thd-transcript~a.pdf"))
+  (define-values (in out) (make-pipe))
+  (thread
+   (λ ()
+     (gen-dot-code a-graph out)
+     (close-output-port out)))
+  (call-with-output-file pf
+    (λ (port)
+      (parameterize ([current-output-port port]
+                     [current-input-port in])
+        (system "/usr/local/bin/dot -Tpdf")))
+    #:exists 'truncate)
+  (parameterize ([current-input-port (open-input-string "")])
+    (system (format "/usr/bin/open ~a" pf)))
+  (void))
           
 
 (define (run-many-trials/hist thunk)

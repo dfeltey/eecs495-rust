@@ -4,6 +4,7 @@
          "sync.rkt"
          pict
          racket/list)
+(provide graph->pict)
 
 (define row-gap-size 10)
 (define column-gap-size 40)
