@@ -198,7 +198,7 @@
                                  'sema-waitors (cons sema+waitor sema+waitors))))))])))))
 
   (define sema%
-    (class* object% (sema<%>)
+    (class* object% (sema<%> equal<%>)
       (define semaphore (make-semaphore 1))
       (init-field count src)
       (define/public (wait srcloc)
@@ -228,6 +228,15 @@
               (define inc? (channel-get resp))
               (when inc? (set! count (+ count 1)))]
              [else (set! count (+ count 1))]))))
+
+      (define/public (equal-to? that recur)
+        (recur count (get-field count that)))
+      (define/public (equal-hash-code-of recur)
+        ;; is this reasonable?
+        (+ 1 (* 2 (recur count))))
+      (define/public (equal-secondary-hash-code-of recur)
+        (+ 1 (* 2 (recur count))))
+      
       (super-new)))
 
   (define identification-param (make-parameter '()))

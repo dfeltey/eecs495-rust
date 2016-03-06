@@ -2,7 +2,9 @@
 (require rackunit racket/runtime-path)
 (define-runtime-path lang-test.rkt "lang-test.rkt")
 (define (run-mod m)
-  ((dynamic-require `(submod ,lang-test.rkt ,m) 'main)))
+  (define-values (ans get-transcript)
+    ((dynamic-require `(submod ,lang-test.rkt ,m) 'main)))
+  ans)
 
 (module var1 "lang.rkt" #:left-to-right
   (var y 0)
@@ -115,6 +117,14 @@
                  (post s)))
        x))
 (check-equal? (run-mod 'sema2) 2)
+
+(module sema3 "lang.rkt" #:left-to-right
+  (equal? (sema 1) (sema 1)))
+(check-equal? (run-mod 'sema3) #t)
+
+(module sema4 "lang.rkt" #:left-to-right
+  (equal? (sema 0) (sema 1)))
+(check-equal? (run-mod 'sema4) #f)
 
 (module if1 "lang.rkt"
   (if true 1 2))

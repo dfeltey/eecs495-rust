@@ -13,7 +13,7 @@
 
 (provide true false var while
          dot rec sema wait post if print
-         #%app := par + < > <= >= = *
+         #%app := par + < > <= >= = * equal?
          or and implies not xor nor nand
          (rename-out [-define define]
                      [datum #%datum]
