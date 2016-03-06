@@ -22,15 +22,15 @@
 
 (define-syntax-parameter the-par/proc #f)
 (define-syntax-parameter the-maybe-swap-thread/proc #f)
-(define-syntax-parameter the-sema% #f)
+(define-syntax-parameter the-make-sema #f)
 
 (define-syntax (sema stx)
-  (define sema% (syntax-parameter-value #'the-sema%))
-  (unless sema%
+  (define make-sema (syntax-parameter-value #'the-make-sema))
+  (unless make-sema
     (raise-syntax-error #f "server not set up"))
   (syntax-parse stx
     [(_ arg)
-     #`(new #,sema% [count arg] [src #,(syntax/loc stx (here))])]))
+     #`(#,make-sema arg #,(syntax/loc stx (here)))]))
 (define (post sema)
   (unless (and (object? sema) (is-a? sema sema<%>))
     (raise-argument-error 'post "sema" sema))
@@ -167,7 +167,7 @@
         
         (define (main)
 
-          (define-values (par/proc maybe-swap-thread/proc sema% get-transcript)
+          (define-values (par/proc maybe-swap-thread/proc make-sema get-transcript)
             (start-server #,(if (syntax-e (attribute lr.left-to-right?))
                                 #'pick-first-thd
                                 #'pick-thd-randomly)))
@@ -175,7 +175,7 @@
           (values
            (syntax-parameterize ([the-par/proc #'par/proc]
                                  [the-maybe-swap-thread/proc #'maybe-swap-thread/proc]
-                                 [the-sema% #'sema%])
+                                 [the-make-sema #'make-sema])
                                 #,@(check/rewrite-var-seq #'(define-or-var ...))
                                 body)
            get-transcript))
@@ -249,14 +249,14 @@
              [current-summary (hash)]
              [trials 0])
     (define-values (next get-transcript) (thunk))
-    (unless (zero? trials) (when (zero? (modulo trials 200)) (printf "~a trials ...\n" trials)))
     (define next-trials
       (hash-set current-trials
                 next
                 (+ (hash-ref current-trials next 0) 1)))
     (define next-summary (summarize next-trials))
     (cond
-      [(and (trials . >= . 100) (equal? next-summary current-summary))
+      [(or (and (trials . >= . 100) (equal? next-summary current-summary))
+           (trials . >= . 1000))
        (printf "~a trials\n" trials)
        (for ([k (in-list (sort (hash-keys next-summary)
                                string<?
@@ -267,6 +267,9 @@
                      (* 100 (hash-ref current-summary k)))
                  k))]
       [else
+       (unless (zero? trials)
+         (when (zero? (modulo trials 200))
+           (printf "~a trials ...\n" trials)))
        (loop next-trials next-summary (+ trials 1))])))
 
 (define (summarize ht)

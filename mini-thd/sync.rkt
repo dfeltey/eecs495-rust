@@ -3,6 +3,7 @@
          racket/contract
          racket/class
          racket/pretty
+         racket/format
          "visualize-struct.rkt"
          (for-syntax syntax/parse
                      racket/base))
@@ -11,11 +12,11 @@
   [start-server (-> (-> (listof waitor?) waitor?)
                     (values (-> srcloc? (-> any) (-> any) ... void?)
                             (-> srcloc? void?)
-                            (class/c
-                             (init [count exact-nonnegative-integer?]
-                                   [src srcloc?])
-                             [post (-> any/c void?)]
-                             [wait (-> any/c srcloc? void?)])
+                            (-> exact-nonnegative-integer?
+                                srcloc?
+                                (object/c
+                                 [post (-> any/c void?)]
+                                 [wait (-> any/c srcloc? void?)]))
                             (-> (listof any/c))))]
   [sort-thds (-> (listof waitor?) (listof waitor?))]
   [lon< (-> (listof exact-nonnegative-integer?)
@@ -197,48 +198,6 @@
                                  'started-pars (remove thd started-pars)
                                  'sema-waitors (cons sema+waitor sema+waitors))))))])))))
 
-  (define sema%
-    (class* object% (sema<%> equal<%>)
-      (define semaphore (make-semaphore 1))
-      (init-field count src)
-      (define/public (wait srcloc)
-        (define waitor-semaphore #f)
-        (call-with-semaphore
-         semaphore
-         (λ ()
-           (cond
-             [(zero? count)
-              (set! waitor-semaphore (make-semaphore))
-              (channel-put waiting-on-sema
-                           (vector
-                            this
-                            (waitor (current-thread)
-                                    (identification-param)
-                                    waitor-semaphore srcloc)))]
-             [else (set! count (- count 1))])))
-        (when waitor-semaphore (semaphore-wait waitor-semaphore)))
-      (define/public (post)
-        (call-with-semaphore
-         semaphore
-         (λ ()
-           (cond
-             [(zero? count)
-              (define resp (make-channel))
-              (channel-put posted-a-zero (vector this resp))
-              (define inc? (channel-get resp))
-              (when inc? (set! count (+ count 1)))]
-             [else (set! count (+ count 1))]))))
-
-      (define/public (equal-to? that recur)
-        (recur count (get-field count that)))
-      (define/public (equal-hash-code-of recur)
-        ;; is this reasonable?
-        (+ 1 (* 2 (recur count))))
-      (define/public (equal-secondary-hash-code-of recur)
-        (+ 1 (* 2 (recur count))))
-      
-      (super-new)))
-
   (define identification-param (make-parameter '()))
 
   (define (par/proc srcloc thunk1 . thunks)
@@ -275,11 +234,66 @@
     (define chan (make-channel))
     (channel-put transcript-chan chan)
     (reverse (channel-get chan)))
+
+  (define (make-sema count src)
+    (new sema%
+         [waiting-on-sema waiting-on-sema]
+         [identification-param identification-param]
+         [posted-a-zero posted-a-zero]
+         [count count]
+         [src src]))
   
   (values par/proc
           maybe-swap-thread/proc
-          sema%
+          make-sema
           get-transcript))
+
+(define sema%
+  (class* object% (sema<%> equal<%> writable<%>)
+    (define semaphore (make-semaphore 1))
+    (init-field count src)
+    (init-field waiting-on-sema identification-param posted-a-zero)
+    (define/public (wait srcloc)
+      (define waitor-semaphore #f)
+      (call-with-semaphore
+       semaphore
+       (λ ()
+         (cond
+           [(zero? count)
+            (set! waitor-semaphore (make-semaphore))
+            (channel-put waiting-on-sema
+                         (vector
+                          this
+                          (waitor (current-thread)
+                                  (identification-param)
+                                  waitor-semaphore srcloc)))]
+           [else (set! count (- count 1))])))
+      (when waitor-semaphore (semaphore-wait waitor-semaphore)))
+    (define/public (post)
+      (call-with-semaphore
+       semaphore
+       (λ ()
+         (cond
+           [(zero? count)
+            (define resp (make-channel))
+            (channel-put posted-a-zero (vector this resp))
+            (define inc? (channel-get resp))
+            (when inc? (set! count (+ count 1)))]
+           [else (set! count (+ count 1))]))))
+    
+    (define/public (equal-to? that recur)
+      (recur count (get-field count that)))
+    (define/public (equal-hash-code-of recur)
+      ;; is this reasonable?
+      (+ 1 (* 2 (recur count))))
+    (define/public (equal-secondary-hash-code-of recur)
+      (+ 1 (* 2 (recur count))))
+
+    (define/public (custom-write port)
+      (display (~a "#<sema " count ">") port))
+    (define/public (custom-display port) (custom-write port))
+    
+    (super-new)))
 
 (define (remove-ith lst i)
   (cond
@@ -321,7 +335,7 @@
   (check-true  (lon< '(0) '(0 1)))
   (check-true  (lon< '() '(0)))
 
-  (define-values (par/proc maybe-swap-thread/proc sema% get-transcript)
+  (define-values (par/proc maybe-swap-thread/proc make-sema get-transcript)
     (start-server pick-smallest))
   (define (mst) (maybe-swap-thread/proc (here)))
   
@@ -376,7 +390,7 @@
 
   (check-equal?
    (let ([x '()]
-         [s (new sema% [count 1] [src (here)])])
+         [s (make-sema 1 (here))])
      (par/proc
       (here)
       (λ () (send s wait (here)) (set! x (cons 1 x)) (send s post))
@@ -386,7 +400,7 @@
 
   (check-equal?
    (let ([x '()]
-         [s (new sema% [count 0] [src (here)])])
+         [s (make-sema 0 (here))])
      (par/proc
       (here)
       (λ () (send s wait (here)) (set! x (cons 1 x)))
@@ -396,7 +410,7 @@
 
   (check-equal?
    (let ([x '()]
-         [s (new sema% [count 0] [src (here)])])
+         [s (make-sema 0 (here))])
      (par/proc
       (here)
       (λ () (set! x (cons 2 x)) (send s post))
@@ -406,7 +420,7 @@
 
   (check-equal?
    (let ([x '()]
-         [s (new sema% [count 0] [src (here)])])
+         [s (make-sema 0 (here))])
      (par/proc
       (here)
       (λ () (send s wait (here)) (set! x (cons 2 x)) (send s post))
