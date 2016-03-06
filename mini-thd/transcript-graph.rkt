@@ -63,9 +63,11 @@
                 (for/fold ([threads (hash-remove threads identification)])
                           ([i (in-range size)])
                   (define child-identification (cons i identification))
+                  (define child-start-node (new-basic-node a-graph #f child-identification))
+                  (add-edge! a-graph par-start child-start-node)
                   (hash-set threads
                             (cons i identification)
-                            par-start)))]
+                            child-start-node)))]
          [(t-choice (vector identification 'join) srcloc)
           (define join-node (new-basic-node a-graph
                                             (~a "join " (fmt-srcloc srcloc))
@@ -75,7 +77,9 @@
             (for/list ([(thread-identification node) (in-hash threads)]
                        #:when (and (pair? thread-identification)
                                    (equal? (cdr thread-identification) identification)))
-              (add-edge! a-graph node join-node)
+              (define child-end-node (new-basic-node a-graph #f thread-identification))
+              (add-edge! a-graph node child-end-node)
+              (add-edge! a-graph child-end-node join-node)
               thread-identification))
           (define without-child-threads
             (for/fold ([threads threads])

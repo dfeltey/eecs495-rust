@@ -64,7 +64,7 @@
   (let ()
     (define g (make-empty-graph))
     (define n0 (new-basic-node g "zero" '()))
-    (define n1 (new-basic-node g "zero" '()))
+    (define n1 (new-basic-node g "one" '()))
     (add-edge! g n0 n1)
     (check-equal? (get-neighbors g n0) (list n1))
     (remove-edge! g n0 n1)
@@ -74,11 +74,20 @@
   (fprintf port "digraph {\n")
   (fprintf port "  rankdir = LR\n")
   (for ([(node a-node-info) (in-hash (graph-nodes a-graph))])
-    (fprintf port "  ~a [label=\"~a\"]\n" node (node-info-name a-node-info)))
+    (define name (node-info-name a-node-info))
+    (cond
+      [name (fprintf port "  ~a [label=\"~a\"]\n" node name)]
+      [else (fprintf port "  ~a [shape=point]\n" node)]))
   (printf "\n")
   (for ([(parent children) (in-hash (graph-neighbors a-graph))])
     (for ([child (in-list children)])
-      (fprintf port "  \"~a\" -> \"~a\"\n" parent child)))
+      (define child-info (hash-ref (graph-nodes a-graph) child))
+      (fprintf port "  \"~a\" -> \"~a\"~a\n"
+               parent
+               child
+               (if (node-info-name child-info)
+                   ""
+                   " [arrowhead=none]"))))
   (for ([(parent children) (in-hash (graph-hb a-graph))])
     (for ([child (in-list children)])
       (fprintf port "  \"~a\" -> \"~a\" [style=dashed, color=red, constraint=false]\n" parent child)))
