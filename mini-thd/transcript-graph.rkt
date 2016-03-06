@@ -53,7 +53,7 @@
        (match (car transcript)
          [(t-par identification srcloc size)
           (define par-start (new-basic-node a-graph
-                                            (~a "par line " (srcloc-line srcloc))
+                                            (~a "par " (fmt-srcloc srcloc))
                                             identification))
           (define node (hash-ref threads identification))
           (add-edge! a-graph node par-start)
@@ -68,7 +68,7 @@
                             par-start)))]
          [(t-choice (vector identification 'join) srcloc)
           (define join-node (new-basic-node a-graph
-                                            (~a "join line " (srcloc-line srcloc))
+                                            (~a "join " (fmt-srcloc srcloc))
                                             identification))
           (add-hb-edge! a-graph last-thing join-node)
           (define to-remove
@@ -87,7 +87,7 @@
          [(t-choice identification srcloc)
           (define prev-node (hash-ref threads identification))
           (define next-node (new-basic-node a-graph
-                                            (~a "line " (srcloc-line srcloc))
+                                            (fmt-srcloc srcloc)
                                             identification))
           (add-edge! a-graph prev-node next-node)
           (add-hb-edge! a-graph last-thing next-node)
@@ -95,6 +95,22 @@
                 next-node
                 (hash-set threads identification next-node))])]))
   a-graph)
+
+(define (fmt-srcloc a-srcloc)
+  (match-define (srcloc src line column position span) a-srcloc)
+  (define file
+    (cond
+      [(path? src)
+       (define-values (base name dir?) (split-path src))
+       name]
+      [else "??.rkt"]))
+  (~a file
+      (cond
+        [(and line column)
+         (~a ":" line ":" column)]
+        [position
+         (~a "::" position)]
+        [else ""])))
 
 (module+ test
   (define (mksrc line) (srcloc (syntax-source #'here) line 0 #f #f))
