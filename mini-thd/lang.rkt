@@ -206,10 +206,10 @@
         (module+ main
           (run-many-trials
            main
-           #,(if (null? (attribute histogram))
+           #,(if (attribute histogram)
                  #'#t
                  #'#f)
-           #,(if (null? (attribute dot))
+           #,(if (attribute dot)
                  #'#t
                  #'#f))))]))
 
