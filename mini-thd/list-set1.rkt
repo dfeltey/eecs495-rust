@@ -1,4 +1,4 @@
-#lang s-exp "lang.rkt"
+#lang s-exp "lang.rkt" #:dot
 
 (define (make-lock)
   (sema 1))
@@ -17,7 +17,7 @@
        (= (dot (dot node next) val) key)))
 
 (define (find-predecessor-locking lst key)
-  (var ptr lst)
+  (let mut ptr lst)
   (seq
    (wait (dot ptr guard))
    (while
