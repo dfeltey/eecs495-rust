@@ -1,16 +1,15 @@
-#lang s-exp "lang.rkt" 
+#lang s-exp "lang.rkt"
 
 (define (make-lock)
   (sema 1))
-(define (lock l)
-  (wait l))
-(define (unlock l)
-  (post l))
+
+(define (make-list lst)
+  (rec (guard (make-lock)) (next lst)))
 
 (define (make-node val next)
   (rec (guard (make-lock)) (val val) (next next)))
 
-(var null false)
+(let null false)
 
 
 (define (matches node key)
@@ -20,37 +19,50 @@
 (define (find-predecessor-locking lst key)
   (var ptr lst)
   (seq
-   (lock (dot ptr guard))
+   (wait (dot ptr guard))
    (while
     (and (dot ptr next)
          (< (dot (dot ptr next) val) key))
-    (seq (lock (dot (dot ptr next) guard))
-         (unlock (dot ptr guard))
+    (seq (wait (dot (dot ptr next) guard))
+         (post (dot ptr guard))
          (:= ptr (dot ptr next))))
    ptr))
 
+(define (find-predecessor-locking-rec lst key)
+  (seq
+   (wait (dot lst guard))
+   (if (and (dot lst next)
+            (< (dot (dot lst next) val) key))
+       (seq (wait (dot (dot lst next) guard))
+            (post (dot lst guard))
+            (find-predecessor-locking-rec (dot lst next) key))
+       lst)))
+
 (define (insert lst key)
-  (var prev (find-predecessor-locking lst key))
-  (var new-node
+  (let prev (find-predecessor-locking lst key))
+  (let new-node
        (make-node key (dot prev next)))
   (if (matches prev key)
       false
       (seq (:= (dot prev next) new-node)
-           (unlock (dot prev guard))
+           (post (dot prev guard))
            true)))
 
 (define (remove lst key)
-  (var prev (find-predecessor-locking lst key))
-  (if (not (matches prev key))
-      false
+  (let prev (find-predecessor-locking lst key))
+  (if (matches prev key)
       (seq (:= (dot prev next) (dot (dot prev next) next))
-           (unlock (dot prev guard))
-           true)))
+           (post (dot prev guard))
+           true)
+      false))
+
+(define (do-build-list n count)
+    (if (< count n)
+        (make-node count (do-build-list n (+ 1 count)))
+        (make-node n null)))
 
 (define (build-list n)
-  (var lst (make-node 0 null))
-  (var i 1)
-  (seq (while (< i n) (seq (insert lst i) (:= i (+ i 1)))) lst))
+  (make-list (do-build-list n 0)))
 
 (define (list->plain-list lst)
   (if lst
@@ -58,13 +70,17 @@
         (next (list->plain-list (dot lst next))))
       false))
 
-(var the-list (build-list 3))
-(seq (par (remove the-list 1)
-          (remove the-list 2))
-     (equal? (list->plain-list the-list)
-             (list->plain-list (build-list 1))))
+(define (clean-list lst)
+  (list->plain-list (dot lst next)))
 
-;(list->plain-list (build-list 2))
+(let the-list (build-list 1))
+(seq (par (remove the-list 1)
+          (insert the-list 2))
+     (seq
+      (equal? (clean-list the-list)
+             (rec (val 0) (next (rec (val 2) (next null)))))))
+
+
 
 
 
