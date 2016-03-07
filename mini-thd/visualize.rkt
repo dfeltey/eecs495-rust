@@ -4,7 +4,8 @@
          "sync.rkt"
          pict
          racket/list)
-(provide graph->pict)
+(provide graph->pict
+         build-layers)
 
 (define row-gap-size 10)
 (define column-gap-size 40)
@@ -22,12 +23,20 @@
   (define layers (build-layers a-graph))
   (define y-coordinates (build-y-coordinates layers a-graph))
   (define diagram-main-height (build-diagram-main-height a-graph layers))
+
+  (define ld-with-hb-edges
+    (longest-distances (combine-edges (graph-neighbors a-graph)
+                                      (graph-hb a-graph))))
+  (define hb-layers (make-hash))
+  (for ([(node dist) (in-hash ld-with-hb-edges)])
+    (hash-set! hb-layers dist (cons node (hash-ref hb-layers dist '()))))
   (define layer-centers
-    (apply vector (build-layer-centers a-graph layers)))
+    (apply vector (build-layer-centers a-graph hb-layers)))
+  
   (define nodes-pict
     (panorama
      (for*/fold ([main (blank)])
-                ([(layer-index nodes) (in-hash layers)]
+                ([(layer-index nodes) (in-hash hb-layers)]
                  [node (in-list nodes)])
        (define p (node-pict a-graph node))
        (define x (- (vector-ref layer-centers layer-index)
@@ -39,16 +48,28 @@
   (add-edges a-graph nodes-pict))
 
 (define (add-edges a-graph nodes-pict)
-  (for*/fold ([main nodes-pict])
+  (add-edges-from-hash
+   (add-edges-from-hash
+    nodes-pict
+    a-graph
+    (graph-neighbors a-graph) 3 "black")
+   a-graph 
+   (graph-hb a-graph) 1 "red"))
+
+(define (add-edges-from-hash main a-graph neighbors-hash width color)
+  (for*/fold ([main main])
              ([(node a-node-info) (in-hash (graph-nodes a-graph))]
-              [neighbor (in-list (hash-ref (graph-neighbors a-graph) node '()))])
+              [neighbor (in-list (hash-ref neighbors-hash node '()))])
     (pin-line/under main
                     (node-pict a-graph node)
-                    (node-pict a-graph neighbor))))
+                    (node-pict a-graph neighbor)
+                    width color)))
 
-(define (pin-line/under main from to)
+(define (pin-line/under main from to width color)
   (cc-superimpose
-   (launder (pin-line (ghost main) from cc-find to cc-find))
+   (colorize
+    (linewidth width (launder (pin-line (ghost main) from cc-find to cc-find)))
+    color)
    main))
 
 (define (build-layer-centers a-graph layers)
@@ -134,6 +155,15 @@
         (add-edge! a-graph middle neighbor)
         middle)))
   layers)
+
+(define (combine-edges edges1 edges2)
+  (define ht (make-hash))
+  (define (add-em edges)
+    (for ([(k v) (in-hash edges)])
+      (hash-set! ht k (remove-duplicates (append (hash-ref ht k '()) v)))))
+  (add-em edges1)
+  (add-em edges2)
+  ht)
 
 (module+ test
   (require rackunit)
@@ -260,6 +290,4 @@ n5 --+                           |
                                ("n10" . 0)
                                ("n7" . 1/2)
                                ("n6" . 0)
-                               ("n5" . 1/2))))
-
-    (graph->pict a-graph)))
+                               ("n5" . 1/2))))))

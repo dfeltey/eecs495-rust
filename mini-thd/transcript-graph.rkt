@@ -121,14 +121,15 @@
   (check-equal?
    (graph-neighbors
     (build-transcript-graph (list (t-par '() (mksrc 1) 2)
-                             (t-choice '(0) (mksrc 2))
-                             (t-choice '(1) (mksrc 3))
-                             (t-choice '#(() join) (mksrc 4)))))
-   (make-hash '(("n1" . ("n3" "n2")) ("n2" . ("n4")) ("n0" . ("n1")) ("n3" . ("n4")))))
+                                  (t-choice '(0) (mksrc 2))
+                                  (t-choice '(1) (mksrc 3))
+                                  (t-choice '#(() join) (mksrc 4)))))
+   (make-hash '(("n0" . ("n1")) ("n1" . ("n3" "n2")) ("n2" . ("n4")) ("n3" . ("n5"))
+                                ("n4" . ("n7")) ("n5" . ("n8"))  ("n8" . ("n6")) ("n7" . ("n6"))))
   (check-equal?
    (graph-hb
     (build-transcript-graph (list (t-par '() (mksrc 1) 2)
-                             (t-choice '(0) (mksrc 2))
-                             (t-choice '(1) (mksrc 3))
-                             (t-choice '#(() join) (mksrc 4)))))
-   (make-hash '(("n1" . ("n2")) ("n2" . ("n3")) ("n0" . ("n1")) ("n3" . ("n4"))))))
+                                  (t-choice '(0) (mksrc 2))
+                                  (t-choice '(1) (mksrc 3))
+                                  (t-choice '#(() join) (mksrc 4)))))
+   (make-hash '(("n0" . ("n1")) ("n1" . ("n4")) ("n4" . ("n5")) ("n5" . ("n6")))))))

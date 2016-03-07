@@ -1,6 +1,7 @@
 #lang racket/base
 (require racket/format
          racket/contract
+         racket/list
          pict)
 (provide
  (contract-out
@@ -20,7 +21,6 @@
  graph-nodes
  node-info-pict
  get-neighbors
-
  gen-dot-code
  graph?)
 
