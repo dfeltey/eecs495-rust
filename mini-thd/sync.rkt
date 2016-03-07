@@ -9,7 +9,8 @@
                      racket/base))
 (provide
  (contract-out
-  [start-server (-> (-> (listof waitor?) waitor?)
+  [start-server (-> channel?
+                    (-> (listof waitor?) waitor?)
                     (values (-> srcloc? (-> any) (-> any) ... void?)
                             (-> srcloc? void?)
                             (-> exact-nonnegative-integer?
@@ -17,7 +18,8 @@
                                 (object/c
                                  [post (-> any/c void?)]
                                  [wait (-> any/c srcloc? void?)]))
-                            (-> (listof any/c))))]
+                            (-> (listof any/c))
+                            (-> channel? void?)))]
   [sort-thds (-> (listof waitor?) (listof waitor?))]
   [lon< (-> (listof exact-nonnegative-integer?)
             (listof exact-nonnegative-integer?)
@@ -40,163 +42,178 @@
 ;; srcloc info: where in the original program something caused a wait
 (struct waitor (thread id semaphore srcloc) #:transparent)
 
-(define (start-server pick-one [pick-a-sema-waitor pick-one])
+(define (start-server main-thread-chan pick-one [pick-a-sema-waitor pick-one])
   (define join-on-chan (make-channel))
   (define maybe-swap-chan (make-channel))
   (define started-pars-chan (make-channel))
   (define posted-a-zero (make-channel))
   (define waiting-on-sema (make-channel))
   (define transcript-chan (make-channel))
+  (define register-deadlock-observer-chan (make-channel))
   
-  (let ([main-thd (current-thread)])
-    (thread
-     (λ ()
-       (let loop ([state
-                   (hash ;; (or/c #f thread?)
-                    'active-thread main-thd
-                    
-                    ;; (listof waitor?)
-                    'waitors '()
-                    
-                    ;; listof thd
-                    'started-pars '()
-                    
-                    ;; (listof (vector semaphore? (listof thd)))
-                    'joins '()
-                    
-                    ;; (listof (vector sema% waitor?))
-                    'sema-waitors '()
-
-                    ;; (listof ??)
-                    'transcript '()
-                    )])
-         
-         (match-define (hash-table ('active-thread active-thread)
-                                   ('waitors waitors)
-                                   ('started-pars started-pars)
-                                   ('joins joins)
-                                   ('sema-waitors sema+waitors)
-                                   ('transcript transcript)) state)
-         ;(pretty-write state)
-         (cond
-           [(and (not active-thread)
-                 (null? started-pars)
-                 (not (null? waitors)))
-            ;; nothing is running and we have no pending par that is starting work, so
-            ;; start someone and loop; don't wait for things.
-            (define a-waitor (pick-one waitors))
-            (match-define (waitor thd identification semaphore srcloc) a-waitor)
-            ;(printf "~a:~a:~a resuming ~a\n" source line column (eq-hash-code sema))
-            (semaphore-post semaphore)
-            (loop (hash-set* state
-                             'transcript (cons (t-choice identification srcloc)
-                                               transcript)
-                             'active-thread thd
-                             'waitors (remove a-waitor waitors)))]
-           [else
-            (sync
-
-             (handle-evt transcript-chan (λ (resp) (channel-put resp transcript) (loop state)))
-             
-             (if active-thread
-                 (handle-evt
-                  active-thread
-                  (λ (_) (loop (hash-set state 'active-thread #f))))
-                 never-evt)
-             
-             (apply choice-evt
-                    (for/list ([join (in-list joins)]
-                               [i (in-naturals)])
-                      (define a-waitor (vector-ref join 0))
-                      (define thds (vector-ref join 1))
-                      (apply choice-evt
-                             (for/list ([thd (in-list thds)])
-                               (handle-evt
-                                (thread-dead-evt thd)
-                                (λ (_)
-                                  (cond
-                                    [(null? (cdr thds))
-                                     (loop
-                                      (hash-set* state
-                                                 'waitors (cons a-waitor waitors)
-                                                 'joins (remove-ith joins i)))]
-                                    [else
-                                     (loop (hash-set* state
-                                                      'joins
-                                                      (replace-ith
-                                                       joins
-                                                       i
-                                                       (vector a-waitor (remove thd thds)))))])))))))
-             
-             (apply choice-evt
-                    (for/list ([par (in-list started-pars)])
-                      (handle-evt
-                       (thread-dead-evt par)
-                       (λ (_) (loop (hash-set state 'started-pars (remove par started-pars)))))))
-             
-             (handle-evt
-              maybe-swap-chan
-              (λ (a-waitor)
-                (match-define (waitor thd identification semaphore srcloc) a-waitor)
-                ;(printf "~a:~a:~a blocking ~a\n" source line column (eq-hash-code semaphore))
-                (loop (hash-set* state
-                                 'active-thread (if (eq? thd active-thread) #f active-thread)
-                                 'waitors (cons a-waitor waitors)
-                                 'started-pars (remove thd started-pars)))))
-             
-             (handle-evt
-              started-pars-chan
-              (λ (identification+srcloc+new-thds)
-                (match-define (vector identification srcloc new-thds) identification+srcloc+new-thds)
-                (loop (hash-set* state
-                                 'transcript (cons (t-par identification srcloc
-                                                          (+ 1 (length new-thds)))
-                                                   transcript)
-                                 'started-pars (append new-thds started-pars)))))
-             
-             (handle-evt
-              join-on-chan
-              (λ (info+thds)
-                (define joining-thd (waitor-thread (vector-ref info+thds 0)))
-                (loop (hash-set* state
-                                 'active-thread (if (eq? joining-thd active-thread) #f active-thread)
-                                 'joins (cons info+thds joins)))))
-             
-             (handle-evt
-              posted-a-zero
-              (λ (sema+resp)
-                (define these-sema+waitors
-                  (for/list ([sema+waitor (in-list sema+waitors)]
-                             #:when (equal? (vector-ref sema+waitor 0)
-                                            (vector-ref sema+resp 0)))
-                    sema+waitor))
-                (cond
-                  [(null? these-sema+waitors)
-                   (channel-put (vector-ref sema+resp 1) #t)
-                   (loop state)]
-                  [else
-                   (channel-put (vector-ref sema+resp 1) #f)
-                   (define picked-waitor
-                     (pick-a-sema-waitor
-                      (map (λ (x) (vector-ref x 1)) these-sema+waitors)))
-                   (define picked-sema-waitor
-                     (for/or ([ele (in-list these-sema+waitors)])
-                       (and (equal? picked-waitor (vector-ref ele 1))
-                            ele)))
-                   (unless picked-sema-waitor (error 'ack))
-                   (loop (hash-set* state
-                                    'sema-waitors (remove picked-sema-waitor sema+waitors)
-                                    'waitors (cons picked-waitor waitors)))])))
-             
-             (handle-evt
-              waiting-on-sema
-              (λ (sema+waitor)
-                (match-define (waitor thd identification semaphore srcloc)
-                  (vector-ref sema+waitor 1))
-                (loop (hash-set* state
-                                 'active-thread (if (eq? thd active-thread) #f active-thread)
-                                 'started-pars (remove thd started-pars)
-                                 'sema-waitors (cons sema+waitor sema+waitors))))))])))))
+  (thread
+   (λ ()
+     (define main-thd (channel-get main-thread-chan))
+     (let loop ([state
+                 (hash ;; (or/c #f thread?)
+                  'active-thread main-thd
+                  
+                  ;; (listof waitor?)
+                  'waitors '()
+                  
+                  ;; listof thd
+                  'started-pars '()
+                  
+                  ;; (listof (vector semaphore? (listof thd)))
+                  'joins '()
+                  
+                  ;; (listof (vector sema% waitor?))
+                  'sema-waitors '()
+                  
+                  ;; (listof ??)
+                  'transcript '()
+                  
+                  ;; (or/c channel? #f)
+                  'deadlock-observer #f
+                  )])
+       
+       (match-define (hash-table ('active-thread active-thread)
+                                 ('waitors waitors)
+                                 ('started-pars started-pars)
+                                 ('joins joins)
+                                 ('sema-waitors sema+waitors)
+                                 ('transcript transcript)
+                                 ('deadlock-observer deadlock-observer)) state)
+       ;(pretty-write state)
+       (cond
+         [(and (not active-thread)
+               (null? started-pars)
+               (not (null? waitors)))
+          ;; nothing is running and we have no pending par that is starting work, so
+          ;; start someone and loop; don't wait for things.
+          (define a-waitor (pick-one waitors))
+          (match-define (waitor thd identification semaphore srcloc) a-waitor)
+          ;(printf "~a:~a:~a resuming ~a\n" source line column (eq-hash-code sema))
+          (semaphore-post semaphore)
+          (loop (hash-set* state
+                           'transcript (cons (t-choice identification srcloc)
+                                             transcript)
+                           'active-thread thd
+                           'waitors (remove a-waitor waitors)))]
+         [(and (not active-thread)
+               (null? waitors)
+               (null? started-pars)
+               (not (null? sema+waitors))
+               deadlock-observer)
+          (channel-put deadlock-observer (void))
+          (loop (hash-set state 'deadlock-observer #f))]
+         [else
+          (sync
+           
+           (handle-evt register-deadlock-observer-chan
+                       (λ (chan) (loop (hash-set state 'deadlock-observer chan))))
+           
+           (handle-evt transcript-chan (λ (resp) (channel-put resp transcript) (loop state)))
+           
+           (if active-thread
+               (handle-evt
+                active-thread
+                (λ (_) (loop (hash-set state 'active-thread #f))))
+               never-evt)
+           
+           (apply choice-evt
+                  (for/list ([join (in-list joins)]
+                             [i (in-naturals)])
+                    (define a-waitor (vector-ref join 0))
+                    (define thds (vector-ref join 1))
+                    (apply choice-evt
+                           (for/list ([thd (in-list thds)])
+                             (handle-evt
+                              (thread-dead-evt thd)
+                              (λ (_)
+                                (cond
+                                  [(null? (cdr thds))
+                                   (loop
+                                    (hash-set* state
+                                               'waitors (cons a-waitor waitors)
+                                               'joins (remove-ith joins i)))]
+                                  [else
+                                   (loop (hash-set* state
+                                                    'joins
+                                                    (replace-ith
+                                                     joins
+                                                     i
+                                                     (vector a-waitor (remove thd thds)))))])))))))
+           
+           (apply choice-evt
+                  (for/list ([par (in-list started-pars)])
+                    (handle-evt
+                     (thread-dead-evt par)
+                     (λ (_) (loop (hash-set state 'started-pars (remove par started-pars)))))))
+           
+           (handle-evt
+            maybe-swap-chan
+            (λ (a-waitor)
+              (match-define (waitor thd identification semaphore srcloc) a-waitor)
+              ;(printf "~a:~a:~a blocking ~a\n" source line column (eq-hash-code semaphore))
+              (loop (hash-set* state
+                               'active-thread (if (eq? thd active-thread) #f active-thread)
+                               'waitors (cons a-waitor waitors)
+                               'started-pars (remove thd started-pars)))))
+           
+           (handle-evt
+            started-pars-chan
+            (λ (identification+srcloc+new-thds)
+              (match-define (vector identification srcloc new-thds) identification+srcloc+new-thds)
+              (loop (hash-set* state
+                               'transcript (cons (t-par identification srcloc
+                                                        (+ 1 (length new-thds)))
+                                                 transcript)
+                               'started-pars (append new-thds started-pars)))))
+           
+           (handle-evt
+            join-on-chan
+            (λ (info+thds)
+              (define joining-thd (waitor-thread (vector-ref info+thds 0)))
+              (loop (hash-set* state
+                               'active-thread (if (eq? joining-thd active-thread) #f active-thread)
+                               'joins (cons info+thds joins)))))
+           
+           (handle-evt
+            posted-a-zero
+            (λ (sema+resp)
+              (define these-sema+waitors
+                (for/list ([sema+waitor (in-list sema+waitors)]
+                           #:when (equal? (vector-ref sema+waitor 0)
+                                          (vector-ref sema+resp 0)))
+                  sema+waitor))
+              (cond
+                [(null? these-sema+waitors)
+                 (channel-put (vector-ref sema+resp 1) #t)
+                 (loop state)]
+                [else
+                 (channel-put (vector-ref sema+resp 1) #f)
+                 (define picked-waitor
+                   (pick-a-sema-waitor
+                    (map (λ (x) (vector-ref x 1)) these-sema+waitors)))
+                 (define picked-sema-waitor
+                   (for/or ([ele (in-list these-sema+waitors)])
+                     (and (equal? picked-waitor (vector-ref ele 1))
+                          ele)))
+                 (unless picked-sema-waitor (error 'ack))
+                 (loop (hash-set* state
+                                  'sema-waitors (remove picked-sema-waitor sema+waitors)
+                                  'waitors (cons picked-waitor waitors)))])))
+           
+           (handle-evt
+            waiting-on-sema
+            (λ (sema+waitor)
+              (match-define (waitor thd identification semaphore srcloc)
+                (vector-ref sema+waitor 1))
+              (loop (hash-set* state
+                               'active-thread (if (eq? thd active-thread) #f active-thread)
+                               'started-pars (remove thd started-pars)
+                               'sema-waitors (cons sema+waitor sema+waitors))))))]))))
 
   (define identification-param (make-parameter '()))
 
@@ -242,11 +259,15 @@
          [posted-a-zero posted-a-zero]
          [count count]
          [src src]))
+
+  (define (register-deadlock-observer chan)
+    (channel-put register-deadlock-observer-chan chan))
   
   (values par/proc
           maybe-swap-thread/proc
           make-sema
-          get-transcript))
+          get-transcript
+          register-deadlock-observer))
 
 (define sema%
   (class* object% (sema<%> equal<%> writable<%>)
@@ -335,8 +356,10 @@
   (check-true  (lon< '(0) '(0 1)))
   (check-true  (lon< '() '(0)))
 
-  (define-values (par/proc maybe-swap-thread/proc make-sema get-transcript)
-    (start-server pick-smallest))
+  (define main-thread-chan (make-channel))
+  (define-values (par/proc maybe-swap-thread/proc make-sema get-transcript register-deadlock-observer)
+    (start-server main-thread-chan pick-smallest))
+  (channel-put main-thread-chan (current-thread))
   (define (mst) (maybe-swap-thread/proc (here)))
   
   (for ([x (in-range 1000)])

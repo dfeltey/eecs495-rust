@@ -131,6 +131,14 @@
       (equal? 1234 (sema 0))))
 (check-equal? (run-mod 'sema5) #f)
 
+(module sema6 "lang.rkt" #:left-to-right
+  (wait (sema 0)))
+(check-equal? (run-mod 'sema6) 'deadlock)
+
+(module sema7 "lang.rkt" #:left-to-right
+  (par 1 (wait (sema 0)) 3))
+(check-equal? (run-mod 'sema7) 'deadlock)
+
 (module if1 "lang.rkt"
   (if true 1 2))
 (check-equal? (run-mod 'if1) 1)

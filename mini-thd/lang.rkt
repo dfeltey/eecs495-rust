@@ -190,17 +190,26 @@
         
         (define (main)
 
-          (define-values (par/proc maybe-swap-thread/proc make-sema get-transcript)
-            (start-server #,(if (syntax-e (attribute lr.left-to-right?))
+          (define main-thread-chan (make-channel))
+          (define-values (par/proc
+                          maybe-swap-thread/proc
+                          make-sema
+                          get-transcript
+                          register-deadlock-observer)
+            (start-server main-thread-chan
+                          #,(if (syntax-e (attribute lr.left-to-right?))
                                 #'pick-first-thd
                                 #'pick-thd-randomly)))
-          
-          (values
-           (syntax-parameterize ([the-par/proc #'par/proc]
-                                 [the-maybe-swap-thread/proc #'maybe-swap-thread/proc]
-                                 [the-make-sema #'make-sema])
-                                #,@(check/rewrite-var-seq #'(define-or-var ...))
-                                body)
+
+          (run-program
+           main-thread-chan
+           (λ ()
+             (syntax-parameterize ([the-par/proc #'par/proc]
+                                   [the-maybe-swap-thread/proc #'maybe-swap-thread/proc]
+                                   [the-make-sema #'make-sema])
+                                  #,@(check/rewrite-var-seq #'(define-or-var ...))
+                                  body))
+           register-deadlock-observer
            get-transcript))
         
         (module+ main
@@ -212,6 +221,19 @@
            #,(if (attribute dot)
                  #'#t
                  #'#f))))]))
+
+(define (run-program main-thread-chan main-thunk register-deadlock-observer get-transcript)
+  (define normal-result-chan (make-channel))
+  (define deadlock-result-chan (make-channel))
+  (thread
+   (λ ()
+     (channel-put main-thread-chan (current-thread))
+     (channel-put normal-result-chan (main-thunk))))
+  (register-deadlock-observer deadlock-result-chan)
+  (values (sync normal-result-chan
+                (handle-evt deadlock-result-chan (λ (_) 'deadlock)))
+          get-transcript))
+
 
 (define-syntax (true stx) #'#t)
 (define-syntax (false stx) #'#f)
@@ -251,7 +273,7 @@
      (let loop ()
        (define-values (result get-transcript) (thunk))
        (cond
-         [result (loop)]
+         [(and result (not (equal? result 'deadlock))) (loop)]
          [else
           (define a-graph (build-transcript-graph (get-transcript)))
           (cond
