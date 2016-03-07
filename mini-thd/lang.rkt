@@ -12,7 +12,7 @@
          "sync.rkt"
          "visualize.rkt")
 
-(provide true false var while
+(provide true false while mut
          dot rec sema wait post if print
          #%app := par + < > <= >= = * equal?
          or and implies not xor nor nand
@@ -53,9 +53,11 @@
     (raise-syntax-error #f "server not set up"))
   #`(#,maybe-swap-thread/proc #,(syntax/loc stx (here))))
 
-(define-syntax (var stx)
-  (syntax-parse stx
-    [(_ id:id init:expr)
+(define-syntax (mut stx) (raise-syntax-error 'mut "expected to be just inside `let'" stx))
+
+(define-syntax (-let stx)
+  (syntax-parse stx #:literals (mut)
+    [(_ mut id:id init:expr)
      (with-syntax ([(secret-id) (generate-temporaries (list #'id))])
        #'(begin
            (define secret-id init)
@@ -71,10 +73,7 @@
                    (identifier? #'x)
                    #`(begin
                        #,(syntax/loc stx (maybe-swap-thread))
-                       secret-id)]))))))]))
-
-(define-syntax (-let stx)
-  (syntax-parse stx
+                       secret-id)]))))))]
     [(_ id:id init:expr)
      (with-syntax ([(secret-id) (generate-temporaries (list #'id))])
        #'(begin
@@ -111,7 +110,7 @@
 (begin-for-syntax
   (define-syntax-class var-decl
     #:description "variable declaration"
-    (pattern (var id:id rhs:expr))
+    (pattern (let mut id:id rhs:expr))
     (pattern (let id:id rhs:expr)))
   (define-syntax-class define-or-var
     #:description "define header"
@@ -163,8 +162,8 @@
 
 (define-for-syntax (check/rewrite-var-seq stx)
   (for/list ([d-or-v (in-list (syntax->list stx))])
-    (syntax-parse d-or-v #:literals (var -define -let)
-      [(var id:id expr:expr)
+    (syntax-parse d-or-v #:literals (mut -define -let)
+      [(-let mut id:id expr:expr)
        d-or-v]
       [(-let id:id expr:expr)
        d-or-v]

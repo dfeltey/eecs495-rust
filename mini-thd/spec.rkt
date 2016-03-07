@@ -45,8 +45,8 @@ Bonus:
 
   ;; definitions
   (d ::=
-     (define (x x ...) (var x s) ... s) ;; define a function w/local vars
-     (var x s)) ;; global variable
+     (define (x x ...) (let mut[?] x s) ... s) ;; define a function w/local vars
+     (let mut[?] x s)) ;; global variable
 
   ;; statement/expressions
   (s ::=
@@ -61,7 +61,7 @@ Bonus:
      (:= (dot s x) s)  ;; field assignment
      (x s ....)    ;; fn call
      (if s s s)    ;; conditional
-     (while s (var x s) ... s) ;; loop
+     (while s (let mut[?] x s) ... s) ;; loop
      (+ s s)
      (- s s)
      (< s s)

@@ -7,12 +7,12 @@
   ans)
 
 (module var1 "lang.rkt" #:left-to-right
-  (var y 0)
+  (let mut y 0)
   y)
 (check-equal? (run-mod 'var1) 0)
 
 (module assign1 "lang.rkt" #:left-to-right
-  (var y 0)
+  (let mut y 0)
   (seq (:= y 1)
        y))
 (check-equal? (run-mod 'assign1) 1)
@@ -29,8 +29,8 @@
 
 (module fun3 "lang.rkt" #:left-to-right
   (define (f)
-    (var q 0)
-    (var r 1)
+    (let mut q 0)
+    (let mut r 1)
     (seq (par (:= r q)
               (:= q 2))
          r))
@@ -39,8 +39,8 @@
 
 (module fun4 "lang.rkt" #:left-to-right
   (define (f)
-    (var q 0)
-    (var r 1)
+    (let mut q 0)
+    (let mut r 1)
     (seq (par (:= q 2)
               (:= r q))
          r))
@@ -48,7 +48,7 @@
 (check-equal? (run-mod 'fun4) 2)
 
 (module par1 "lang.rkt" #:left-to-right
-  (var y 0)
+  (let mut y 0)
   (seq (par (:= y (+ y 1))
             (:= y (+ y 1)))
        y))
@@ -59,28 +59,28 @@
 (check-equal? (run-mod 'struct1) 2)
 
 (module struct2 "lang.rkt"
-  (var z (rec (x 1) (y 2)))
+  (let mut z (rec (x 1) (y 2)))
   (seq (:= (dot z x) 3)
        (dot z x)))
 (check-equal? (run-mod 'struct2) 3)
 
 (module struct3 "lang.rkt" #:left-to-right
-  (var z (rec (x 1) (y 2)))
+  (let mut z (rec (x 1) (y 2)))
   (seq (par (:= (dot z x) 3)
             (:= (dot z x) 4))
        (dot z x)))
 (check-equal? (run-mod 'struct3) 4)
 
 (module struct4 "lang.rkt" #:left-to-right
-  (var z (rec (x 1) (y 2)))
+  (let mut z (rec (x 1) (y 2)))
   (seq (par (:= (dot z x) 4)
             (:= (dot z x) 3))
        (dot z x)))
 (check-equal? (run-mod 'struct4) 3)
 
 (module struct5 "lang.rkt" #:left-to-right
-  (var s (rec (f 1)))
-  (var y 0)
+  (let mut s (rec (f 1)))
+  (let mut y 0)
   (define (f s)
     (seq (par (:= (dot s f) 2)
               (:= y (dot s f)))
@@ -89,8 +89,8 @@
 (check-equal? (run-mod 'struct5) 2)
 
 (module struct6 "lang.rkt" #:left-to-right
-  (var s (rec (f 1)))
-  (var y 0)
+  (let mut s (rec (f 1)))
+  (let mut y 0)
   (define (f s)
     (seq (par (:= y (dot s f))
               (:= (dot s f) 2))
@@ -99,8 +99,8 @@
 (check-equal? (run-mod 'struct6) 1)
 
 (module sema1 "lang.rkt" #:left-to-right
-  (var s (sema 0))
-  (var x 0)
+  (let mut s (sema 0))
+  (let mut x 0)
   (seq (par (seq (:= x 1)
                  (post s))
             (seq (wait s)
@@ -109,8 +109,8 @@
 (check-equal? (run-mod 'sema1) 2)
 
 (module sema2 "lang.rkt" #:left-to-right
-  (var s (sema 0))
-  (var x 0)
+  (let mut s (sema 0))
+  (let mut x 0)
   (seq (par (seq (wait s)
                  (:= x 2))
             (seq (:= x 1)
@@ -139,8 +139,8 @@
 (check-equal? (run-mod 'if2) 2)
 
 (module while "lang.rkt"
-  (var x 1)
-  (var l 10)
+  (let mut x 1)
+  (let mut l 10)
   (seq (while (l . > . 0)
               (seq (:= x (* x l))
                    (:= l (+ l -1))))
@@ -175,7 +175,7 @@
                                (cons 'd #f))))
 
 (module print1 "lang.rkt"
-  (var x 0)
+  (let mut x 0)
   (print x))
 (define (run-mod/output name)
   (define sp (open-output-string))
@@ -186,9 +186,9 @@
               "x 0\n")
 
 (module print2 "lang.rkt"
-  (var x 0)
-  (var y 1)
-  (var z 2)
+  (let mut x 0)
+  (let mut y 1)
+  (let mut z 2)
   (print x y z))
 (check-equal? (run-mod/output 'print2)
               "x 0 y 1 z 2\n")
