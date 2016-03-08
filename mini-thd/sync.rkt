@@ -257,6 +257,7 @@
          [waiting-on-sema waiting-on-sema]
          [identification-param identification-param]
          [posted-a-zero posted-a-zero]
+         [maybe-swap-chan maybe-swap-chan]
          [count count]
          [src src]))
 
@@ -273,9 +274,20 @@
   (class* object% (sema<%> equal<%> writable<%>)
     (define semaphore (make-semaphore 1))
     (init-field count src)
-    (init-field waiting-on-sema identification-param posted-a-zero)
+    (init-field waiting-on-sema identification-param posted-a-zero maybe-swap-chan)
     (define/public (wait srcloc)
       (define waitor-semaphore #f)
+
+      ;; maybe-swap-thread
+      (let ()
+        (define maybe-swap-semaphore (make-semaphore 0))
+        (channel-put maybe-swap-chan (waitor (current-thread)
+                                             (identification-param)
+                                             maybe-swap-semaphore srcloc))
+        (semaphore-wait maybe-swap-semaphore))
+      ;; end maybe-swap-thread
+
+      ;; handle the semaphore count adjustments
       (call-with-semaphore
        semaphore
        (λ ()
