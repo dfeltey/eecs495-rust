@@ -8,26 +8,43 @@
   [new-basic-node (-> graph?
                       (or/c #f string?)
                       (listof exact-nonnegative-integer?)
-                      string?)])
+                      string?)]
+  [make-empty-graph (-> graph?)]
+  [add-edge! (-> graph? string? string? void?)]
+  [add-hb-edge! (-> graph? string? string? void?)]
+  [remove-edge! (-> graph? string? string? void?)]
+  [node->node-info (->i ([g graph?]
+                         [n string?])
+                        #:pre (g n) (λ (n) (node-in-graph? g n))
+                        [res node-info?])]
+  [node-in-graph? (-> graph? string? boolean?)])
  (struct-out node-info)
- make-empty-graph
- add-edge!
- add-hb-edge!
- remove-edge!
- 
+ in-nodes
  graph-neighbors
- graph-backwards-neighbors
  graph-hb
- graph-nodes
  node-info-pict
  get-neighbors
  gen-dot-code
  graph?)
 
-(define (get-neighbors graph node)
-  (hash-ref (graph-neighbors graph) node '()))
-(define (get-backwards-neighbors graph node)
-  (hash-ref (graph-backwards-neighbors graph) node '()))
+(define (in-nodes a-graph)
+  (in-hash-keys (graph-nodes a-graph)))
+
+(define (node-in-graph? a-graph node)
+  (and (hash-ref (graph-nodes a-graph) node #f) #t))
+(define (get-neighbors a-graph node)
+  (hash-ref (graph-neighbors a-graph) node '()))
+(define (get-backwards-neighbors a-graph node)
+  (hash-ref (graph-backwards-neighbors a-graph) node '()))
+(define (node->node-info a-graph node)
+  (hash-ref (graph-nodes a-graph) node))
+(define ((mk-fail who a-graph node))
+  (raise-argument-error
+   who
+   (format "node in graph, one of ~s"
+           (sort (hash-keys (graph-nodes a-graph)) string<?))
+   1
+   a-graph node))
 
 ;; neighbors : string -o> (listof string)
 ;; backwards-neighbors : string -o> (listof string)

@@ -17,7 +17,7 @@
   (define pct (node-pict a-graph n))
   (if (pict? pct) (pict-width pct) 0))
 (define (node-pict a-graph n)
-  (node-info-pict (hash-ref (graph-nodes a-graph) n)))
+  (node-info-pict (node->node-info a-graph n)))
 
 (define (graph->pict a-graph)
   (define layers (build-layers a-graph))
@@ -58,7 +58,7 @@
 
 (define (add-edges-from-hash main a-graph neighbors-hash width color)
   (for*/fold ([main main])
-             ([(node a-node-info) (in-hash (graph-nodes a-graph))]
+             ([node (in-nodes a-graph)]
               [neighbor (in-list (hash-ref neighbors-hash node '()))])
     (pin-line/under main
                     (node-pict a-graph node)
@@ -116,7 +116,7 @@
   (for ([(layer-index nodes) (in-hash layers)])
     (define (node->lon n)
       (node-info-identification
-       (hash-ref (graph-nodes a-graph) n)))
+       (node->node-info a-graph n)))
     (define sorted (sort nodes lon< #:key node->lon))
     (define num-nodes (length sorted))
     (cond
@@ -137,10 +137,10 @@
   (define lds (longest-distances (graph-neighbors a-graph)))
   (for ([(node dist) (in-hash lds)])
     (hash-set! layers dist (cons node (hash-ref layers dist '()))))
-  (for ([a-node (in-list (hash-keys (graph-nodes a-graph)))])
+  (for ([a-node (in-nodes a-graph)])
     (define node-layer (hash-ref lds a-node))
     (define a-node-identification
-      (node-info-identification (hash-ref (graph-nodes a-graph) a-node)))
+      (node-info-identification (node->node-info a-graph a-node)))
     (for ([neighbor (in-list (get-neighbors a-graph a-node))])
       (define neighbor-layer (hash-ref lds neighbor))
       (unless (node-layer . < . neighbor-layer)
@@ -228,7 +228,7 @@ n0 --+                 +--> n4
                                (1 . ("n1" "n3"))
                                (0 . ("n0")))))
 
-    (check-equal? (node-info-identification (hash-ref (graph-nodes a-graph) "n5"))
+    (check-equal? (node-info-identification (node->node-info a-graph "n5"))
                   '(0))
 
     (check-equal? (build-y-coordinates (build-layers a-graph) a-graph)
