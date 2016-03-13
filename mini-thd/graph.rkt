@@ -20,20 +20,35 @@
   [node-in-graph? (-> graph? string? boolean?)])
  (struct-out node-info)
  in-nodes
- graph-neighbors
- graph-hb
+ (rename-out [derived-graph-neighbors graph-neighbors])
+ (rename-out [derived-graph-hb graph-hb])
  node-info-pict
  get-neighbors
  gen-dot-code
  graph?)
+
+(define (derived-graph-neighbors a-graph)
+  (make-derived-graph-neighbors a-graph get-neighbors))
+(define (derived-graph-hb a-graph)
+  (make-derived-graph-neighbors a-graph get-hb-neighbors))
+(define (make-derived-graph-neighbors a-graph node->some-neighbors)
+  (define ht (make-hash))
+  (for ([node (in-nodes a-graph)])
+    (for ([neighbor (in-list (node->some-neighbors a-graph node))])
+      (hash-set! ht node (cons neighbor (hash-ref ht node '()))))
+    (hash-set! ht node (reverse (hash-ref ht node '()))))
+  ht)
 
 (define (in-nodes a-graph)
   (in-hash-keys (graph-nodes a-graph)))
 
 (define (node-in-graph? a-graph node)
   (and (hash-ref (graph-nodes a-graph) node #f) #t))
-(define (get-neighbors a-graph node)
-  (hash-ref (graph-neighbors a-graph) node '()))
+(define (get-neighbors a-graph node [type 'normal])
+  (for/list ([edge (in-list (hash-ref (graph-edges a-graph) node '()))]
+             #:when (equal? (edge-type edge) type))
+    (edge-dest edge)))
+(define (get-hb-neighbors a-graph node) (get-neighbors a-graph node 'hb))
 (define (get-backwards-neighbors a-graph node)
   (hash-ref (graph-backwards-neighbors a-graph) node '()))
 (define (node->node-info a-graph node)
@@ -46,11 +61,14 @@
    1
    a-graph node))
 
-;; neighbors : string -o> (listof string)
+;; neighbors : string -o> (listof edge)
 ;; backwards-neighbors : string -o> (listof string)
-;; hb : string -o> (listof string)
 ;; nodes : string -o> yinfo
-(struct graph (neighbors backwards-neighbors hb nodes) #:transparent)
+(struct graph (edges backwards-neighbors nodes) #:transparent)
+
+;; dest : string
+;; type : symbol
+(struct edge (dest type) #:transparent)
 
 (struct node-info (pict name identification) #:transparent)
 (define (new-basic-node graph name identification)
@@ -68,25 +86,23 @@
              "white")
    basic))
 
-(define (add-edge! a-graph n1 n2)
-  (define neighbors (graph-neighbors a-graph))
+(define (add-edge! a-graph n1 n2 [type 'normal])
+  (define edges (graph-edges a-graph))
   (define backwards-neighbors (graph-backwards-neighbors a-graph))
-  (hash-set! neighbors n1 (cons n2 (get-neighbors a-graph n1)))
+  (define an-edge (edge n2 type))
+  (hash-set! edges n1 (cons an-edge (hash-ref edges n1 '())))
   (hash-set! backwards-neighbors n2 (cons n1 (get-backwards-neighbors a-graph n2))))
-(define (remove-edge! a-graph n1 n2)
-  (define neighbors (graph-neighbors a-graph))
+(define (remove-edge! a-graph n1 n2 [type 'normal])
+  (define edges (graph-edges a-graph))
   (define backwards-neighbors (graph-backwards-neighbors a-graph))
-  (hash-set! neighbors n1 (remove n2 (get-neighbors a-graph n1)))
+  (hash-set! edges n1 (remove (edge n2 type) (hash-ref edges n1 '())))
   (hash-set! backwards-neighbors n2 (remove n1 (get-backwards-neighbors a-graph n2))))
-(define (add-hb-edge! a-graph n1 n2)
-  (define hb (graph-hb a-graph))
-  (hash-set! hb n1 (cons n2 (hash-ref hb n1 '()))))
+(define (add-hb-edge! a-graph n1 n2) (add-edge! a-graph n1 n2 'hb))
 (define (make-empty-graph)
   (define neighbors (make-hash))
   (define backwards-neighbors (make-hash))
-  (define hb (make-hash))
   (define nodes (make-hash))
-  (graph neighbors backwards-neighbors hb nodes))
+  (graph neighbors backwards-neighbors nodes))
 
 (module+ test
   (require rackunit)
@@ -108,16 +124,20 @@
       [name (fprintf port "  ~a [label=\"~a\"]\n" node name)]
       [else (fprintf port "  ~a [shape=point]\n" node)]))
   (printf "\n")
-  (for ([(parent children) (in-hash (graph-neighbors a-graph))])
-    (for ([child (in-list children)])
+  (for ([(parent edges) (in-hash (graph-edges a-graph))])
+    (for ([edge (in-list edges)])
+      (define child (edge-dest edge))
       (define child-info (hash-ref (graph-nodes a-graph) child))
-      (fprintf port "  \"~a\" -> \"~a\"~a\n"
-               parent
-               child
-               (if (node-info-name child-info)
-                   ""
-                   " [arrowhead=none]"))))
-  (for ([(parent children) (in-hash (graph-hb a-graph))])
-    (for ([child (in-list children)])
-      (fprintf port "  \"~a\" -> \"~a\" [style=dashed, color=red, constraint=false]\n" parent child)))
+      (case (edge-type edge)
+        [(normal)
+         (fprintf port "  \"~a\" -> \"~a\"~a\n"
+                  parent
+                  child
+                  (if (node-info-name child-info)
+                      ""
+                      " [arrowhead=none]"))]
+        [(hb)
+         (fprintf port "  \"~a\" -> \"~a\" [style=dashed, color=red, constraint=false]\n"
+                  parent
+                  child)])))
   (fprintf port "}\n"))
