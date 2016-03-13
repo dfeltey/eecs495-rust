@@ -56,15 +56,15 @@
                                             (~a "par " (fmt-srcloc srcloc))
                                             identification))
           (define node (hash-ref threads identification))
-          (add-edge! a-graph node par-start)
-          (add-hb-edge! a-graph last-thing par-start)
+          (add-edge! a-graph node par-start 'normal)
+          (add-edge! a-graph last-thing par-start 'hb)
           (loop (cdr transcript)
                 par-start
                 (for/fold ([threads (hash-remove threads identification)])
                           ([i (in-range size)])
                   (define child-identification (cons i identification))
                   (define child-start-node (new-basic-node a-graph #f child-identification))
-                  (add-edge! a-graph par-start child-start-node)
+                  (add-edge! a-graph par-start child-start-node 'normal)
                   (hash-set threads
                             (cons i identification)
                             child-start-node)))]
@@ -72,15 +72,24 @@
           (define join-node (new-basic-node a-graph
                                             (~a "join " (fmt-srcloc srcloc))
                                             identification))
-          (add-hb-edge! a-graph last-thing join-node)
+          (add-edge! a-graph last-thing join-node 'hb)
+          (define child-end-nodes '())
+          (define child-last-nodes '())
           (define to-remove
             (for/list ([(thread-identification node) (in-hash threads)]
                        #:when (and (pair? thread-identification)
                                    (equal? (cdr thread-identification) identification)))
               (define child-end-node (new-basic-node a-graph #f thread-identification))
-              (add-edge! a-graph node child-end-node)
               (add-edge! a-graph child-end-node join-node)
+              (set! child-end-nodes (cons child-end-node child-end-nodes))
+              (set! child-last-nodes (cons node child-last-nodes))
               thread-identification))
+          (for ([child-end-node (in-list child-end-nodes)]
+                [i (in-naturals)])
+            (for ([child-last-node (in-list child-last-nodes)]
+                  [j (in-naturals)])
+              (when (= i j)
+                (add-edge! a-graph child-last-node child-end-node))))
           (define without-child-threads
             (for/fold ([threads threads])
                       ([identification-to-remove (in-list to-remove)])
@@ -93,8 +102,8 @@
           (define next-node (new-basic-node a-graph
                                             (fmt-srcloc srcloc)
                                             identification))
-          (add-edge! a-graph prev-node next-node)
-          (add-hb-edge! a-graph last-thing next-node)
+          (add-edge! a-graph prev-node next-node 'normal)
+          (add-edge! a-graph last-thing next-node 'hb)
           (loop (cdr transcript)
                 next-node
                 (hash-set threads identification next-node))])]))

@@ -10,18 +10,22 @@
                       (listof exact-nonnegative-integer?)
                       string?)]
   [make-empty-graph (-> graph?)]
-  [add-edge! (-> graph? string? string? void?)]
+  [add-edge! (->* (graph? string? string?) ((or/c 'hb 'normal 'invisible)) void?)]
   [add-hb-edge! (-> graph? string? string? void?)]
   [remove-edge! (-> graph? string? string? void?)]
   [node->node-info (->i ([g graph?]
                          [n string?])
                         #:pre (g n) (λ (n) (node-in-graph? g n))
                         [res node-info?])]
-  [node-in-graph? (-> graph? string? boolean?)])
+  [node-in-graph? (-> graph? string? boolean?)]
+  [edge-dest (-> edge? string?)]
+  [edge-type (-> edge? (or/c 'hb 'normal 'invisible))]
+  [get-edges (-> graph? string? (listof edge?))])
  (struct-out node-info)
  in-nodes
  (rename-out [derived-graph-neighbors graph-neighbors])
  (rename-out [derived-graph-hb graph-hb])
+ graph-all-neighbors
  node-info-pict
  get-neighbors
  gen-dot-code
@@ -31,6 +35,10 @@
   (make-derived-graph-neighbors a-graph get-neighbors))
 (define (derived-graph-hb a-graph)
   (make-derived-graph-neighbors a-graph get-hb-neighbors))
+(define (graph-all-neighbors a-graph)
+  (make-derived-graph-neighbors
+   a-graph
+   (λ (a-graph node) (map edge-dest (get-edges a-graph node)))))
 (define (make-derived-graph-neighbors a-graph node->some-neighbors)
   (define ht (make-hash))
   (for ([node (in-nodes a-graph)])
@@ -41,7 +49,7 @@
 
 (define (in-nodes a-graph)
   (in-hash-keys (graph-nodes a-graph)))
-
+(define (get-edges a-graph node) (hash-ref (graph-edges a-graph) node '()))
 (define (node-in-graph? a-graph node)
   (and (hash-ref (graph-nodes a-graph) node #f) #t))
 (define (get-neighbors a-graph node [type 'normal])
@@ -137,7 +145,11 @@
                       ""
                       " [arrowhead=none]"))]
         [(hb)
-         (fprintf port "  \"~a\" -> \"~a\" [style=dashed, color=red, constraint=false]\n"
+         (fprintf port "  \"~a\" -> \"~a\" [style=dashed, color=red]\n"
                   parent
-                  child)])))
+                  child)]
+        [(invisible)
+         ;; adding these to the graph, even with
+         ;; the 'invis' style doesn't look right
+         (void)])))
   (fprintf port "}\n"))

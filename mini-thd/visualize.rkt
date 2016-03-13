@@ -48,21 +48,22 @@
   (add-edges a-graph nodes-pict))
 
 (define (add-edges a-graph nodes-pict)
-  (add-edges-from-hash
-   (add-edges-from-hash
+  (add-some-edges
+   (add-some-edges
     nodes-pict
     a-graph
-    (graph-neighbors a-graph) 3 "black")
+    'normal 3 "black")
    a-graph 
-   (graph-hb a-graph) 1 "red"))
+   'hb 1 "red"))
 
-(define (add-edges-from-hash main a-graph neighbors-hash width color)
+(define (add-some-edges main a-graph which width color)
   (for*/fold ([main main])
              ([node (in-nodes a-graph)]
-              [neighbor (in-list (hash-ref neighbors-hash node '()))])
+              [edge (in-list (get-edges a-graph node))]
+              #:when (equal? (edge-type edge) which))
     (pin-line/under main
                     (node-pict a-graph node)
-                    (node-pict a-graph neighbor)
+                    (node-pict a-graph (edge-dest edge))
                     width color)))
 
 (define (pin-line/under main from to width color)
