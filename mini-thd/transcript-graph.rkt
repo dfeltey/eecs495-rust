@@ -88,8 +88,8 @@
                 [i (in-naturals)])
             (for ([child-last-node (in-list child-last-nodes)]
                   [j (in-naturals)])
-              (when (= i j)
-                (add-edge! a-graph child-last-node child-end-node))))
+              (add-edge! a-graph child-last-node child-end-node
+                         (if (= i j) 'normal 'invisible))))
           (define without-child-threads
             (for/fold ([threads threads])
                       ([identification-to-remove (in-list to-remove)])

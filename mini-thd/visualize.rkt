@@ -25,8 +25,7 @@
   (define diagram-main-height (build-diagram-main-height a-graph layers))
 
   (define ld-with-hb-edges
-    (longest-distances (combine-edges (graph-neighbors a-graph)
-                                      (graph-hb a-graph))))
+    (longest-distances (graph-all-neighbors a-graph)))
   (define hb-layers (make-hash))
   (for ([(node dist) (in-hash ld-with-hb-edges)])
     (hash-set! hb-layers dist (cons node (hash-ref hb-layers dist '()))))
