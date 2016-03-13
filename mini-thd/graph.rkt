@@ -48,7 +48,7 @@
   ht)
 
 (define (in-nodes a-graph)
-  (in-hash-keys (graph-nodes a-graph)))
+  (in-list (hash-keys (graph-nodes a-graph))))
 (define (get-edges a-graph node) (hash-ref (graph-edges a-graph) node '()))
 (define (node-in-graph? a-graph node)
   (and (hash-ref (graph-nodes a-graph) node #f) #t))
